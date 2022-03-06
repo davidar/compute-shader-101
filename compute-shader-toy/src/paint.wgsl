@@ -14,23 +14,33 @@
 //
 // Also licensed under MIT license, at your choice.
 
-[[block]]
 struct Params {
     width: u32;
     height: u32;
     iTime: f32;
 };
 
+struct U32s {
+    values: array<atomic<u32>>;
+};
+
 [[group(0), binding(0)]] var<uniform> params: Params;
 [[group(0), binding(1)]] var outputTex: texture_storage_2d<rgba8unorm,write>;
 
+// A storage buffer, for reading and writing
+[[group(0), binding(2)]] var<storage,read_write> pbuf: U32s;
+
 [[stage(compute), workgroup_size(16, 16)]]
 fn main([[builtin(global_invocation_id)]] global_ix: vec3<u32>) {
-    let fragCoord: vec2<f32> = vec2<f32>(global_ix.xy) / vec2<f32>(f32(params.width), f32(params.height))
-        - vec2<f32>(0.5, 0.5);
+    let resolution: vec2<f32> = vec2<f32>(f32(params.width), f32(params.height));
+    let fragCoord: vec2<f32> = vec2<f32>(global_ix.xy) / resolution - vec2<f32>(0.5, 0.5);
 
     // Shadertoy-like code can go here.
-    let fragColor: vec4<f32> = vec4<f32>(fragCoord.x + 0.5, fragCoord.y + 0.5, sin(params.iTime), 1.0);
+    let fragColor: vec4<f32> = vec4<f32>(fragCoord.x + 0.5, fragCoord.y + 0.5, sin(f32(pbuf.values[0]) / 100.), 1.0);
 
-    textureStore(outputTex, vec2<i32>(global_ix.xy), fragColor);
+    if (global_ix.x == 0u && global_ix.y == 0u) {
+        atomicAdd(&(pbuf.values[0]), 1u);
+    }
+
+    textureStore(outputTex, vec2<i32>(resolution) - vec2<i32>(global_ix.xy), fragColor);
 }

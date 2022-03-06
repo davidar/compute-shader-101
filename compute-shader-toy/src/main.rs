@@ -63,6 +63,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: None,
             entries: &[
+                // r_color
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
@@ -74,13 +75,11 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                     },
                     count: None,
                 },
+                // r_sampler
                 wgpu::BindGroupLayoutEntry {
                     binding: 1,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler {
-                        filtering: false,
-                        comparison: false,
-                    },
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
                     count: None,
                 },
             ],
@@ -106,6 +105,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         primitive: wgpu::PrimitiveState::default(),
         depth_stencil: None,
         multisample: wgpu::MultisampleState::default(),
+        multiview: None,
     });
 
     let img = device.create_texture(&wgpu::TextureDescriptor {
@@ -133,6 +133,16 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     });
     let config_resource = config_dev.as_entire_binding();
 
+    const PBUF_SIZE: u64 = 4 * 1024;
+
+    let pbuf_dev = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: PBUF_SIZE,
+        usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
+        mapped_at_creation: false,
+    });
+    let pbuf_resource = pbuf_dev.as_entire_binding();
+
     let cs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
         label: None,
         source: wgpu::ShaderSource::Wgsl(include_str!("paint.wgsl").into()),
@@ -140,6 +150,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: None,
         entries: &[
+            // params
             wgpu::BindGroupLayoutEntry {
                 binding: 0,
                 visibility: wgpu::ShaderStages::COMPUTE,
@@ -150,6 +161,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 },
                 count: None,
             },
+            // outputTex
             wgpu::BindGroupLayoutEntry {
                 binding: 1,
                 visibility: wgpu::ShaderStages::COMPUTE,
@@ -157,6 +169,19 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                     access: wgpu::StorageTextureAccess::WriteOnly,
                     format: wgpu::TextureFormat::Rgba8Unorm,
                     view_dimension: wgpu::TextureViewDimension::D2,
+                },
+                count: None,
+            },
+            // pbuf
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage {
+                        read_only: false
+                    },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
                 },
                 count: None,
             },
@@ -177,13 +202,20 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         label: None,
         layout: &bind_group_layout,
         entries: &[
+            // params
             wgpu::BindGroupEntry {
                 binding: 0,
                 resource: config_resource,
             },
+            // outputTex
             wgpu::BindGroupEntry {
                 binding: 1,
                 resource: wgpu::BindingResource::TextureView(&img_view),
+            },
+            // outputTex
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: pbuf_resource,
             },
         ],
     });
@@ -200,10 +232,12 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         label: None,
         layout: &copy_bind_group_layout,
         entries: &[
+            // r_color
             wgpu::BindGroupEntry {
                 binding: 0,
                 resource: wgpu::BindingResource::TextureView(&img_view),
             },
+            // r_sampler
             wgpu::BindGroupEntry {
                 binding: 1,
                 resource: wgpu::BindingResource::Sampler(&sampler),
@@ -231,13 +265,13 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 });
                 let mut encoder = device.create_command_encoder(&Default::default());
                 encoder.copy_buffer_to_buffer(&config_host, 0, &config_dev, 0, CONFIG_SIZE);
-                {
+                { // dispatch paint.wgsl
                     let mut cpass = encoder.begin_compute_pass(&Default::default());
                     cpass.set_pipeline(&pipeline);
                     cpass.set_bind_group(0, &bind_group, &[]);
                     cpass.dispatch(size.width / 16, size.height / 16, 1);
                 }
-                {
+                { // dispatch copy.wgsl
                     let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
                     let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: None,
