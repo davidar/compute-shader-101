@@ -43,71 +43,27 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         .expect("error creating device");
     let size = window.inner_size();
     let format = surface.get_preferred_format(&adapter).unwrap();
-    let sc = wgpu::SurfaceConfiguration {
+    surface.configure(&device, &wgpu::SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         format: format,
         width: size.width,
         height: size.height,
         present_mode: wgpu::PresentMode::Mailbox,
-    };
-    surface.configure(&device, &sc);
-
-    // We use a render pipeline just to copy the output buffer of the compute shader to the
-    // swapchain. It would be nice if we could skip this, but swapchains with storage usage
-    // are not fully portable.
-    let copy_shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-        label: None,
-        source: wgpu::ShaderSource::Wgsl(include_str!("copy.wgsl").into()),
-    });
-    let copy_bind_group_layout =
-        device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: None,
-            entries: &[
-                // r_color
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        multisampled: false,
-                        // Should filterable be false if we want nearest-neighbor?
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                    },
-                    count: None,
-                },
-                // r_sampler
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
-                    count: None,
-                },
-            ],
-        });
-    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: None,
-        bind_group_layouts: &[&copy_bind_group_layout],
-        push_constant_ranges: &[],
-    });
-    let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: None,
-        layout: Some(&pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &copy_shader,
-            entry_point: "vs_main",
-            buffers: &[],
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &copy_shader,
-            entry_point: "fs_main",
-            targets: &[format.into()],
-        }),
-        primitive: wgpu::PrimitiveState::default(),
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        multiview: None,
     });
 
+    // uniforms
+    let params = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: 4 * 4,
+        usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
+        mapped_at_creation: false,
+    });
+    let pbuf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: (4 * size.width * size.height).into(),
+        usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
+        mapped_at_creation: false,
+    });
     let img = device.create_texture(&wgpu::TextureDescriptor {
         label: None,
         size: Extent3d {
@@ -121,104 +77,6 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         format: wgpu::TextureFormat::Rgba8Unorm,
         usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
     });
-    let img_view = img.create_view(&Default::default());
-
-    const CONFIG_SIZE: u64 = 4 * 4;
-
-    let config_dev = device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: CONFIG_SIZE,
-        usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
-        mapped_at_creation: false,
-    });
-    let config_resource = config_dev.as_entire_binding();
-
-    let pbuf_size = 4 * size.width * size.height;
-
-    let pbuf_dev = device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: pbuf_size.into(),
-        usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
-        mapped_at_creation: false,
-    });
-    let pbuf_resource = pbuf_dev.as_entire_binding();
-
-    let cs_module = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
-        label: None,
-        source: wgpu::ShaderSource::Wgsl(include_str!("paint.wgsl").into()),
-    });
-    let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-        label: None,
-        entries: &[
-            // params
-            wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Uniform,
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-            // outputTex
-            wgpu::BindGroupLayoutEntry {
-                binding: 1,
-                visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::StorageTexture {
-                    access: wgpu::StorageTextureAccess::WriteOnly,
-                    format: wgpu::TextureFormat::Rgba8Unorm,
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                },
-                count: None,
-            },
-            // pbuf
-            wgpu::BindGroupLayoutEntry {
-                binding: 2,
-                visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage {
-                        read_only: false
-                    },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-        ],
-    });
-    let compute_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: None,
-        bind_group_layouts: &[&bind_group_layout],
-        push_constant_ranges: &[],
-    });
-    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: None,
-        layout: Some(&compute_pipeline_layout),
-        module: &cs_module,
-        entry_point: "main",
-    });
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: None,
-        layout: &bind_group_layout,
-        entries: &[
-            // params
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: config_resource,
-            },
-            // outputTex
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::TextureView(&img_view),
-            },
-            // outputTex
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: pbuf_resource,
-            },
-        ],
-    });
     let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
         address_mode_u: wgpu::AddressMode::ClampToEdge,
         address_mode_v: wgpu::AddressMode::ClampToEdge,
@@ -228,25 +86,77 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         mipmap_filter: wgpu::FilterMode::Nearest,
         ..Default::default()
     });
-    let copy_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+
+    // compute pipeline
+    let compute_shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
         label: None,
-        layout: &copy_bind_group_layout,
+        source: wgpu::ShaderSource::Wgsl(include_str!("paint.wgsl").into()),
+    });
+    let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: None,
+        layout: None,
+        module: &compute_shader,
+        entry_point: "main",
+    });
+    let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: None,
+        layout: &compute_pipeline.get_bind_group_layout(0),
         entries: &[
-            // r_color
             wgpu::BindGroupEntry {
                 binding: 0,
-                resource: wgpu::BindingResource::TextureView(&img_view),
+                resource: params.as_entire_binding(),
             },
-            // r_sampler
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(&img.create_view(&Default::default())),
+            },
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: pbuf.as_entire_binding(),
+            },
+        ],
+    });
+
+    // render pipeline
+    let render_shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+        label: None,
+        source: wgpu::ShaderSource::Wgsl(include_str!("copy.wgsl").into()),
+    });
+    let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: None,
+        layout: None,
+        vertex: wgpu::VertexState {
+            module: &render_shader,
+            entry_point: "vs_main",
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &render_shader,
+            entry_point: "fs_main",
+            targets: &[format.into()],
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+    });
+    let render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: None,
+        layout: &render_pipeline.get_bind_group_layout(0),
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&img.create_view(&Default::default())),
+            },
             wgpu::BindGroupEntry {
                 binding: 1,
                 resource: wgpu::BindingResource::Sampler(&sampler),
             },
         ],
     });
+
     let start_time = std::time::Instant::now();
     let mut frame_count: u32 = 0;
-
     event_loop.run(move |event, _, control_flow| {
         // TODO: this may be excessive polling. It really should be synchronized with
         // swapchain presentation, but that's currently underbaked in wgpu.
@@ -256,25 +166,28 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 let frame = surface
                     .get_current_texture()
                     .expect("error getting texture from swap chain");
-
-                let i_time: f32 = 0.5 + start_time.elapsed().as_micros() as f32 * 1e-6;
-                let config_data = [size.width, size.height, frame_count, i_time.to_bits()];
-                let config_host = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                let time: f32 = start_time.elapsed().as_micros() as f32 * 1e-6;
+                let params_data = [size.width, size.height, frame_count, time.to_bits()];
+                let params_bytes = bytemuck::bytes_of(&params_data);
+                let params_host = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: None,
-                    contents: bytemuck::bytes_of(&config_data),
+                    contents: params_bytes,
                     usage: BufferUsages::COPY_SRC,
                 });
                 let mut encoder = device.create_command_encoder(&Default::default());
-                encoder.copy_buffer_to_buffer(&config_host, 0, &config_dev, 0, CONFIG_SIZE);
-                { // dispatch paint.wgsl
-                    let mut cpass = encoder.begin_compute_pass(&Default::default());
-                    cpass.set_pipeline(&pipeline);
-                    cpass.set_bind_group(0, &bind_group, &[]);
-                    cpass.dispatch(size.width / 16, size.height / 16, 1);
+                encoder.copy_buffer_to_buffer(&params_host, 0, &params, 0, params_bytes.len().try_into().unwrap());
+                {
+                    let mut compute_pass = encoder.begin_compute_pass(&Default::default());
+                    compute_pass.set_pipeline(&compute_pipeline);
+                    compute_pass.set_bind_group(0, &compute_bind_group, &[]);
+                    compute_pass.dispatch(size.width / 16, size.height / 16, 1);
                 }
-                { // dispatch copy.wgsl
+                // We use a render pipeline just to copy the output buffer of the compute shader to the
+                // swapchain. It would be nice if we could skip this, but swapchains with storage usage
+                // are not fully portable.
+                {
                     let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
-                    let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: None,
                         color_attachments: &[wgpu::RenderPassColorAttachment {
                             view: &view,
@@ -286,9 +199,9 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                         }],
                         depth_stencil_attachment: None,
                     });
-                    rpass.set_pipeline(&render_pipeline);
-                    rpass.set_bind_group(0, &copy_bind_group, &[]);
-                    rpass.draw(0..3, 0..2);
+                    render_pass.set_pipeline(&render_pipeline);
+                    render_pass.set_bind_group(0, &render_bind_group, &[]);
+                    render_pass.draw(0..3, 0..2);
                 }
                 queue.submit(Some(encoder.finish()));
                 frame.present();
