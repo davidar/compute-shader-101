@@ -58,7 +58,19 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
         mapped_at_creation: false,
     });
-    let pbuf = device.create_buffer(&wgpu::BufferDescriptor {
+    let pbufx = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: (4 * size.width * size.height).into(),
+        usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
+        mapped_at_creation: false,
+    });
+    let pbufy = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: (4 * size.width * size.height).into(),
+        usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
+        mapped_at_creation: false,
+    });
+    let pbufz = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
         size: (4 * size.width * size.height).into(),
         usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
@@ -112,7 +124,15 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
             },
             wgpu::BindGroupEntry {
                 binding: 2,
-                resource: pbuf.as_entire_binding(),
+                resource: pbufx.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: pbufy.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: pbufz.as_entire_binding(),
             },
         ],
     });

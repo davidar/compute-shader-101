@@ -29,7 +29,9 @@ struct U32s {
 [[group(0), binding(1)]] var outputTex: texture_storage_2d<rgba8unorm,write>;
 
 // A storage buffer, for reading and writing
-[[group(0), binding(2)]] var<storage,read_write> pbuf: U32s;
+[[group(0), binding(2)]] var<storage,read_write> pbufx: U32s;
+[[group(0), binding(3)]] var<storage,read_write> pbufy: U32s;
+[[group(0), binding(4)]] var<storage,read_write> pbufz: U32s;
 
 // https://www.shadertoy.com/view/lstGDs
 // Created by inigo quilez - iq/2016
@@ -67,36 +69,38 @@ fn main([[builtin(global_invocation_id)]] global_ix: vec3<u32>) {
     var seed = params.iFrame * params.width * params.height + id;
     seed = seed ^ (seed<<13u);
 
-    // do 8 passes per frame (since texture memory bandwidh is slow, the
-    // more computations I do per frame the better)
-    for (var j = 0; j < 8; j = j+1) {
-        // pick a random point, but not in H1 or H2
-        var c = vec2<f32>(0.);
-        for (var i = 0; i < 32; i = i+1) {
-            let of = rand(&seed);
-            c = p2c(of * resolution.xy) * 1.1;
-            // test H1 and H2
-            let c2 = dot(c,c);
-            let d = c + vec2<f32>(1.,0.);
-            let h1 = 256.0*c2*c2 - 96.0*c2 + 32.0*c.x - 3.0;
-            let h2 = 16.0*dot(d,d) - 1.0;
-            if (h1 > 0. && h2 > 0.) { break; }
+    var c = p2c(rand(&seed) * resolution.xy) * 1.1;
+    var z = vec2<f32>(0.);
+    var n = 0.;
+    for (var i = 0; i < 5000; i = i+1) {
+        z = vec2<f32>(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
+        if (dot(z,z) > 9.) { break; }
+        n = n + 1.;
+    }
+    var z = vec2<f32>(0.);
+    for (var i = 0; i < 5000; i = i+1) {
+        z = vec2<f32>(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
+        if (dot(z,z) > 9.) { break; }
+        let p1 = c2p(z);
+        let p2 = c2p(vec2<f32>(z.x,-z.y));
+        let id1 = u32(p1.x) + u32(p1.y) * params.width;
+        let id2 = u32(p2.x) + u32(p2.y) * params.width;
+        if (n < 5000.) {
+            atomicAdd(&pbufx.values[id1], 1u);
+            atomicAdd(&pbufx.values[id2], 1u);
         }
-
-        // compute and draw orbit
-        var z = vec2<f32>(0.);
-        for (var i = 0; i < 512; i = i+1) {
-            z = vec2<f32>(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
-            if (dot(z,z) > 9.) { break; }
-            if (i > 128) {
-                let p1 = c2p(z);
-                let p2 = c2p(vec2<f32>(z.x,-z.y));
-                atomicAdd(&pbuf.values[u32(p1.x) + u32(p1.y) * params.width], 1u);
-                atomicAdd(&pbuf.values[u32(p2.x) + u32(p2.y) * params.width], 1u);
-            }
+        if (n < 500.) {
+            atomicAdd(&pbufy.values[id1], 1u);
+            atomicAdd(&pbufy.values[id2], 1u);
+        }
+        if (n < 50.) {
+            atomicAdd(&pbufz.values[id1], 1u);
+            atomicAdd(&pbufz.values[id2], 1u);
         }
     }
 
-    let fragColor = vec4<f32>(1.) * f32(pbuf.values[id]) / 5e5 / params.iTime;
-    textureStore(outputTex, vec2<i32>(global_ix.xy), fragColor);
+    var f = vec4<f32>(f32(pbufx.values[id]), f32(pbufy.values[id]), f32(pbufz.values[id]), 0.) / 50. / f32(params.iFrame);
+    f = 1.3 * pow(f, vec4<f32>(1.0,0.83,0.7,1.0));
+    f = min(f, vec4<f32>(1.0));
+    textureStore(outputTex, vec2<i32>(global_ix.xy), f);
 }
