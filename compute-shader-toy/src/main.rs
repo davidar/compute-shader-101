@@ -123,7 +123,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     });
     let img_view = img.create_view(&Default::default());
 
-    const CONFIG_SIZE: u64 = 12;
+    const CONFIG_SIZE: u64 = 4 * 4;
 
     let config_dev = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
@@ -133,11 +133,11 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     });
     let config_resource = config_dev.as_entire_binding();
 
-    const PBUF_SIZE: u64 = 4 * 1024;
+    let pbuf_size = 4 * size.width * size.height;
 
     let pbuf_dev = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: PBUF_SIZE,
+        size: pbuf_size.into(),
         usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
         mapped_at_creation: false,
     });
@@ -245,6 +245,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         ],
     });
     let start_time = std::time::Instant::now();
+    let mut frame_count: u32 = 0;
 
     event_loop.run(move |event, _, control_flow| {
         // TODO: this may be excessive polling. It really should be synchronized with
@@ -257,7 +258,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                     .expect("error getting texture from swap chain");
 
                 let i_time: f32 = 0.5 + start_time.elapsed().as_micros() as f32 * 1e-6;
-                let config_data = [size.width, size.height, i_time.to_bits()];
+                let config_data = [size.width, size.height, frame_count, i_time.to_bits()];
                 let config_host = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: None,
                     contents: bytemuck::bytes_of(&config_data),
@@ -291,6 +292,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 }
                 queue.submit(Some(encoder.finish()));
                 frame.present();
+                frame_count += 1;
             }
             Event::MainEventsCleared => {
                 window.request_redraw();
