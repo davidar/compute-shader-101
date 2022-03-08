@@ -56,6 +56,11 @@ fn rand(seed: ptr<function, u32>) -> vec2<f32> {
     return vec2<f32>(f32((x>>16u)&32767u), f32((y>>16u)&32767u))/32767.0;
 }
 
+fn smoothstep(edge0: vec4<f32>, edge1: vec4<f32>, x: vec4<f32>) -> vec4<f32> {
+    let t = clamp((x - edge0) / (edge1 - edge0), vec4<f32>(0.0), vec4<f32>(1.0));
+    return t * t * (3.0 - 2.0 * t);
+}
+
 [[stage(compute), workgroup_size(16, 16)]]
 fn main([[builtin(global_invocation_id)]] global_ix: vec3<u32>) {
     let resolution = vec2<f32>(f32(params.width), f32(params.height));
@@ -98,7 +103,6 @@ fn main([[builtin(global_invocation_id)]] global_ix: vec3<u32>) {
     let y = f32(StorageBuffer1.values[id] & 0xffffu);
     let z = f32(StorageBuffer0.values[id]);
     var f = vec4<f32>(x + y + z, y + z, z, 0.) / f32(50u * params.iFrame);
-    f = 1.3 * pow(f, vec4<f32>(1.0,0.83,0.7,1.0));
-    f = min(f, vec4<f32>(1.0));
+    f = smoothstep(vec4<f32>(0.), vec4<f32>(1.), 2.5 * pow(f, vec4<f32>(1.5, 1.4, 1.3, 1.)));
     textureStore(outputTex, vec2<i32>(global_ix.xy), f);
 }
