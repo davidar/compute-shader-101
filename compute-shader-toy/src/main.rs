@@ -58,24 +58,6 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
         mapped_at_creation: false,
     });
-    let pbufx = device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: (4 * size.width * size.height).into(),
-        usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
-        mapped_at_creation: false,
-    });
-    let pbufy = device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: (4 * size.width * size.height).into(),
-        usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
-        mapped_at_creation: false,
-    });
-    let pbufz = device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: (4 * size.width * size.height).into(),
-        usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
-        mapped_at_creation: false,
-    });
     let img = device.create_texture(&wgpu::TextureDescriptor {
         label: None,
         size: Extent3d {
@@ -88,15 +70,6 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba8Unorm,
         usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
-    });
-    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        address_mode_u: wgpu::AddressMode::ClampToEdge,
-        address_mode_v: wgpu::AddressMode::ClampToEdge,
-        address_mode_w: wgpu::AddressMode::ClampToEdge,
-        mag_filter: wgpu::FilterMode::Nearest,
-        min_filter: wgpu::FilterMode::Nearest,
-        mipmap_filter: wgpu::FilterMode::Nearest,
-        ..Default::default()
     });
 
     // compute pipeline
@@ -124,15 +97,21 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
             },
             wgpu::BindGroupEntry {
                 binding: 2,
-                resource: pbufx.as_entire_binding(),
+                resource: device.create_buffer(&wgpu::BufferDescriptor {
+                    label: None,
+                    size: (4 * size.width * size.height).into(),
+                    usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
+                    mapped_at_creation: false,
+                }).as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 3,
-                resource: pbufy.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 4,
-                resource: pbufz.as_entire_binding(),
+                resource: device.create_buffer(&wgpu::BufferDescriptor {
+                    label: None,
+                    size: (4 * size.width * size.height).into(),
+                    usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
+                    mapped_at_creation: false,
+                }).as_entire_binding(),
             },
         ],
     });
@@ -170,7 +149,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
             },
             wgpu::BindGroupEntry {
                 binding: 1,
-                resource: wgpu::BindingResource::Sampler(&sampler),
+                resource: wgpu::BindingResource::Sampler(&device.create_sampler(&Default::default())),
             },
         ],
     });

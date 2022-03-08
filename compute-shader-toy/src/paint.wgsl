@@ -21,17 +21,14 @@ struct Params {
     iTime: f32;
 };
 
-struct U32s {
+struct StorageBuffer {
     values: array<atomic<u32>>;
 };
 
 [[group(0), binding(0)]] var<uniform> params: Params;
 [[group(0), binding(1)]] var outputTex: texture_storage_2d<rgba8unorm,write>;
-
-// A storage buffer, for reading and writing
-[[group(0), binding(2)]] var<storage,read_write> pbufx: U32s;
-[[group(0), binding(3)]] var<storage,read_write> pbufy: U32s;
-[[group(0), binding(4)]] var<storage,read_write> pbufz: U32s;
+[[group(0), binding(2)]] var<storage,read_write> StorageBuffer0: StorageBuffer;
+[[group(0), binding(3)]] var<storage,read_write> StorageBuffer1: StorageBuffer;
 
 // https://www.shadertoy.com/view/lstGDs
 // Created by inigo quilez - iq/2016
@@ -85,21 +82,22 @@ fn main([[builtin(global_invocation_id)]] global_ix: vec3<u32>) {
         let p2 = c2p(vec2<f32>(z.x,-z.y));
         let id1 = u32(p1.x) + u32(p1.y) * params.width;
         let id2 = u32(p2.x) + u32(p2.y) * params.width;
-        if (n < 5000.) {
-            atomicAdd(&pbufx.values[id1], 1u);
-            atomicAdd(&pbufx.values[id2], 1u);
-        }
-        if (n < 500.) {
-            atomicAdd(&pbufy.values[id1], 1u);
-            atomicAdd(&pbufy.values[id2], 1u);
-        }
         if (n < 50.) {
-            atomicAdd(&pbufz.values[id1], 1u);
-            atomicAdd(&pbufz.values[id2], 1u);
+            atomicAdd(&StorageBuffer0.values[id1], 1u);
+            atomicAdd(&StorageBuffer0.values[id2], 1u);
+        } else if (n < 500.) {
+            atomicAdd(&StorageBuffer1.values[id1], 1u);
+            atomicAdd(&StorageBuffer1.values[id2], 1u);
+        } else if (n < 5000.) {
+            atomicAdd(&StorageBuffer1.values[id1], 1u << 16u);
+            atomicAdd(&StorageBuffer1.values[id2], 1u << 16u);
         }
     }
 
-    var f = vec4<f32>(f32(pbufx.values[id]), f32(pbufy.values[id]), f32(pbufz.values[id]), 0.) / 50. / f32(params.iFrame);
+    let x = f32(StorageBuffer1.values[id] >> 16u);
+    let y = f32(StorageBuffer1.values[id] & 0xffffu);
+    let z = f32(StorageBuffer0.values[id]);
+    var f = vec4<f32>(x + y + z, y + z, z, 0.) / f32(50u * params.iFrame);
     f = 1.3 * pow(f, vec4<f32>(1.0,0.83,0.7,1.0));
     f = min(f, vec4<f32>(1.0));
     textureStore(outputTex, vec2<i32>(global_ix.xy), f);
