@@ -84,7 +84,7 @@ fn bufferB([[builtin(global_invocation_id)]] global_ix: vec3<u32>) {
     r.z = r.z - dt * 0.25 * (e.x - w.x + n.y - s.y);
 
     let t = f32(params.iFrame) / 120.;
-    let o = resolution/2. * (1. + vec2<f32>(cos(2.7*t/30.), sin(t/30.)));
+    let o = resolution/2. * (1. + vec2<f32>(cos(t/30.), sin(2.7*t/30.)));
     r = mix(r, vec4<f32>(0.5 * sin(dt * 2. * t) * sin(dt * t), 0., r.z, 1.), exp(-0.2 * length(fragCoord - o)));
     textureStore(outputTex, vec2<i32>(global_ix.xy), r);
 }
@@ -95,7 +95,6 @@ fn main2([[builtin(global_invocation_id)]] global_ix: vec3<u32>) {
     StorageBuffer0.values[id] = StorageBuffer0.values[id] * 9u / 10u;
     StorageBuffer1.values[id] = StorageBuffer1.values[id] * 9u / 10u;
     StorageBuffer2.values[id] = StorageBuffer2.values[id] * 9u / 10u;
-    StorageBuffer3.values[id] = StorageBuffer3.values[id] * 9u / 10u;
 }
 
 [[stage(compute), workgroup_size(16, 16)]]
@@ -109,31 +108,25 @@ fn main([[builtin(global_invocation_id)]] global_ix: vec3<u32>) {
 
     for (var i = 0; i < 10; i = i+1) {
         var p = rand(&seed) * resolution;
-        var z = mix(.3, 1., rand(&seed).x);
-        z = round(z*4.+.15);
+        let z = rand(&seed).x;
+        let c = max(cos(z*6.2+vec4<f32>(1.,2.,3.,4.)),vec4<f32>(0.));
         let n = A(p + vec2<f32>(0., 1.));
         let e = A(p + vec2<f32>(1., 0.));
         let s = A(p - vec2<f32>(0., 1.));
         let w = A(p - vec2<f32>(1., 0.));
         let grad = 0.25 * vec2<f32>(e.z - w.z, n.z - s.z);
-        p = p + 1e4 * grad * (1. + z/4.);
+        p = p + 1e5 * grad * z;
         p = fract(p / resolution) * resolution;
         let id1 = u32(p.x) + u32(p.y) * params.width;
-        if (z == 1.) {
-            atomicAdd(&StorageBuffer0.values[id1], 1u);
-        } else if (z == 2.) {
-            atomicAdd(&StorageBuffer1.values[id1], 1u);
-        } else if (z == 3.) {
-            atomicAdd(&StorageBuffer2.values[id1], 1u);
-        } else if (z == 4.) {
-            atomicAdd(&StorageBuffer3.values[id1], 1u);
-        }
+        atomicAdd(&StorageBuffer0.values[id1], u32(c.x * 256.));
+        atomicAdd(&StorageBuffer1.values[id1], u32(c.y * 256.));
+        atomicAdd(&StorageBuffer2.values[id1], u32(c.z * 256.));
     }
 
     var f = vec4<f32>(0.);
-    f = f + f32(StorageBuffer0.values[id]) * max(cos((1.)/4.*6.2+vec4<f32>(1.,2.,3.,4.)),vec4<f32>(0.));
-    f = f + f32(StorageBuffer1.values[id]) * max(cos((2.)/4.*6.2+vec4<f32>(1.,2.,3.,4.)),vec4<f32>(0.));
-    f = f + f32(StorageBuffer2.values[id]) * max(cos((3.)/4.*6.2+vec4<f32>(1.,2.,3.,4.)),vec4<f32>(0.));
-    f = f + f32(StorageBuffer3.values[id]) * max(cos((4.)/4.*6.2+vec4<f32>(1.,2.,3.,4.)),vec4<f32>(0.));
-    textureStore(outputTex, vec2<i32>(global_ix.xy), f * 5e-3);
+    f.x = f32(StorageBuffer0.values[id]) / 256.;
+    f.y = f32(StorageBuffer1.values[id]) / 256.;
+    f.z = f32(StorageBuffer2.values[id]) / 256.;
+    f = f * sqrt(f) / 1e3;
+    textureStore(outputTex, vec2<i32>(global_ix.xy), f);
 }
