@@ -80,6 +80,24 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
         mapped_at_creation: false,
     });
+    let sb1 = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: (4 * size.width * size.height).into(),
+        usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
+        mapped_at_creation: false,
+    });
+    let sb2 = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: (4 * size.width * size.height).into(),
+        usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
+        mapped_at_creation: false,
+    });
+    let sb3 = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: (4 * size.width * size.height).into(),
+        usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
+        mapped_at_creation: false,
+    });
 
     // compute pipeline
     let compute_shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
@@ -122,6 +140,18 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 count: None,
             },
             wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage {
+                        read_only: false
+                    },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
                 binding: 4,
                 visibility: wgpu::ShaderStages::COMPUTE,
                 ty: wgpu::BindingType::Texture {
@@ -135,6 +165,30 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 binding: 5,
                 visibility: wgpu::ShaderStages::COMPUTE,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 6,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage {
+                        read_only: false
+                    },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 7,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage {
+                        read_only: false
+                    },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
                 count: None,
             },
         ],
@@ -194,12 +248,24 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 resource: sb0.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
+                binding: 3,
+                resource: sb1.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
                 binding: 4,
                 resource: wgpu::BindingResource::TextureView(&bufa.create_view(&Default::default())),
             },
             wgpu::BindGroupEntry {
                 binding: 5,
                 resource: wgpu::BindingResource::Sampler(&sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 6,
+                resource: sb2.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 7,
+                resource: sb3.as_entire_binding(),
             },
         ],
     });
@@ -220,12 +286,24 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 resource: sb0.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
+                binding: 3,
+                resource: sb1.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
                 binding: 4,
                 resource: wgpu::BindingResource::TextureView(&bufa.create_view(&Default::default())),
             },
             wgpu::BindGroupEntry {
                 binding: 5,
                 resource: wgpu::BindingResource::Sampler(&sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 6,
+                resource: sb2.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 7,
+                resource: sb3.as_entire_binding(),
             },
         ],
     });
@@ -246,12 +324,24 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 resource: sb0.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
+                binding: 3,
+                resource: sb1.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
                 binding: 4,
                 resource: wgpu::BindingResource::TextureView(&bufb.create_view(&Default::default())),
             },
             wgpu::BindGroupEntry {
                 binding: 5,
                 resource: wgpu::BindingResource::Sampler(&sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 6,
+                resource: sb2.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 7,
+                resource: sb3.as_entire_binding(),
             },
         ],
     });
@@ -272,12 +362,24 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 resource: sb0.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
+                binding: 3,
+                resource: sb1.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
                 binding: 4,
                 resource: wgpu::BindingResource::TextureView(&bufa.create_view(&Default::default())),
             },
             wgpu::BindGroupEntry {
                 binding: 5,
                 resource: wgpu::BindingResource::Sampler(&sampler),
+            },
+            wgpu::BindGroupEntry {
+                binding: 6,
+                resource: sb2.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 7,
+                resource: sb3.as_entire_binding(),
             },
         ],
     });
