@@ -26,9 +26,11 @@ struct StorageBuffer {
 };
 
 [[group(0), binding(0)]] var<uniform> params: Params;
-[[group(0), binding(1)]] var outputTex: texture_storage_2d<rgba8unorm,write>;
+[[group(0), binding(1)]] var outputTex: texture_storage_2d<rgba16float,write>;
 [[group(0), binding(2)]] var<storage,read_write> StorageBuffer0: StorageBuffer;
 [[group(0), binding(3)]] var<storage,read_write> StorageBuffer1: StorageBuffer;
+[[group(0), binding(4)]] var inputTex: texture_2d<f32>;
+[[group(0), binding(5)]] var inputSampler: sampler;
 
 // https://www.shadertoy.com/view/lstGDs
 // Created by inigo quilez - iq/2016
@@ -61,6 +63,50 @@ fn smoothstep(edge0: vec4<f32>, edge1: vec4<f32>, x: vec4<f32>) -> vec4<f32> {
     return t * t * (3.0 - 2.0 * t);
 }
 
+let dt = 0.1;
+
+fn A(fragCoord: vec2<f32>) -> vec4<f32> {
+    let resolution = vec2<f32>(f32(params.width), f32(params.height));
+    return textureSampleLevel(inputTex, inputSampler, fract(fragCoord / resolution), 0.);
+}
+
+fn T(fragCoord: vec2<f32>) -> vec4<f32> {
+    return A(fragCoord - dt * A(fragCoord).xy);
+}
+
+[[stage(compute), workgroup_size(16, 16)]]
+fn bufferA([[builtin(global_invocation_id)]] global_ix: vec3<u32>) {
+    let resolution = vec2<f32>(f32(params.width), f32(params.height));
+    let fragCoord = vec2<f32>(global_ix.xy) + 0.5;
+    var r = T(fragCoord);
+    let n = T(fragCoord + vec2<f32>(0., 1.));
+    let e = T(fragCoord + vec2<f32>(1., 0.));
+    let s = T(fragCoord - vec2<f32>(0., 1.));
+    let w = T(fragCoord - vec2<f32>(1., 0.));
+    r.x = r.x - dt * 0.25 * (e.z - w.z);
+    r.y = r.y - dt * 0.25 * (n.z - s.z);
+
+    if (params.iFrame < 3u) { r = vec4<f32>(0.); }
+    textureStore(outputTex, vec2<i32>(global_ix.xy), r);
+}
+
+[[stage(compute), workgroup_size(16, 16)]]
+fn bufferB([[builtin(global_invocation_id)]] global_ix: vec3<u32>) {
+    let resolution = vec2<f32>(f32(params.width), f32(params.height));
+    let fragCoord = vec2<f32>(global_ix.xy) + 0.5;
+    var r = A(fragCoord);
+    let n = A(fragCoord + vec2<f32>(0., 1.));
+    let e = A(fragCoord + vec2<f32>(1., 0.));
+    let s = A(fragCoord - vec2<f32>(0., 1.));
+    let w = A(fragCoord - vec2<f32>(1., 0.));
+    r.z = r.z - dt * 0.25 * (e.x - w.x + n.y - s.y);
+
+    let o = resolution/2.;
+    let t = f32(params.iFrame) / 120.;
+    r = mix(r, vec4<f32>(0.5 * sin(dt * 2. * t) * sin(dt * t), 0., r.z, 1.), exp(-0.2 * length(fragCoord - o)));
+    textureStore(outputTex, vec2<i32>(global_ix.xy), r);
+}
+
 [[stage(compute), workgroup_size(16, 16)]]
 fn main2([[builtin(global_invocation_id)]] global_ix: vec3<u32>) {
     let id = global_ix.x + global_ix.y * params.width;
@@ -77,16 +123,18 @@ fn main([[builtin(global_invocation_id)]] global_ix: vec3<u32>) {
     seed = seed ^ (seed<<13u);
 
     for (var i = 0; i < 10; i = i+1) {
-        var p = rand(&seed) * 2. - 1.;
-        p = p + .2 * sin(15. * p.yx + 3. + params.iTime);
-        p = p + .1 * sin(15. * length(p) + 2. + params.iTime);
-        p = (p + 1.)/2. * resolution.xy;
+        var p = rand(&seed) * resolution;
+        let n = A(p + vec2<f32>(0., 1.));
+        let e = A(p + vec2<f32>(1., 0.));
+        let s = A(p - vec2<f32>(0., 1.));
+        let w = A(p - vec2<f32>(1., 0.));
+        let grad = 0.25 * vec2<f32>(e.z - w.z, n.z - s.z);
+        p = p + 3e3 * grad * 2.;
         let id1 = u32(p.x) + u32(p.y) * params.width;
         atomicAdd(&StorageBuffer0.values[id1], 1u);
     }
 
     let z = f32(StorageBuffer0.values[id]);
     var f = vec4<f32>(z) / 500.;
-    f = smoothstep(vec4<f32>(0.), vec4<f32>(1.), 2.5 * pow(f, vec4<f32>(1.5, 1.4, 1.3, 1.)));
     textureStore(outputTex, vec2<i32>(global_ix.xy), f);
 }
