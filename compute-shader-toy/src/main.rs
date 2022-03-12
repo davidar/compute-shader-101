@@ -58,7 +58,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
         mapped_at_creation: false,
     });
-    let img = device.create_texture(&wgpu::TextureDescriptor {
+    let texture_descriptor = wgpu::TextureDescriptor {
         label: None,
         size: Extent3d {
             width: size.width,
@@ -70,6 +70,13 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba8Unorm,
         usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
+    };
+    let img = device.create_texture(&texture_descriptor);
+    let sb0 = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: (4 * size.width * size.height).into(),
+        usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
+        mapped_at_creation: false,
     });
 
     // compute pipeline
@@ -82,6 +89,12 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         layout: None,
         module: &compute_shader,
         entry_point: "main",
+    });
+    let compute_pipeline2 = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: None,
+        layout: None,
+        module: &compute_shader,
+        entry_point: "main2",
     });
     let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,
@@ -97,21 +110,21 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
             },
             wgpu::BindGroupEntry {
                 binding: 2,
-                resource: device.create_buffer(&wgpu::BufferDescriptor {
-                    label: None,
-                    size: (4 * size.width * size.height).into(),
-                    usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
-                    mapped_at_creation: false,
-                }).as_entire_binding(),
+                resource: sb0.as_entire_binding(),
+            },
+        ],
+    });
+    let compute_bind_group2 = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: None,
+        layout: &compute_pipeline2.get_bind_group_layout(0),
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: params.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
-                binding: 3,
-                resource: device.create_buffer(&wgpu::BufferDescriptor {
-                    label: None,
-                    size: (4 * size.width * size.height).into(),
-                    usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
-                    mapped_at_creation: false,
-                }).as_entire_binding(),
+                binding: 2,
+                resource: sb0.as_entire_binding(),
             },
         ],
     });
@@ -175,6 +188,12 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 });
                 let mut encoder = device.create_command_encoder(&Default::default());
                 encoder.copy_buffer_to_buffer(&params_host, 0, &params, 0, params_bytes.len().try_into().unwrap());
+                {
+                    let mut compute_pass = encoder.begin_compute_pass(&Default::default());
+                    compute_pass.set_pipeline(&compute_pipeline2);
+                    compute_pass.set_bind_group(0, &compute_bind_group2, &[]);
+                    compute_pass.dispatch(size.width / 16, size.height / 16, 1);
+                }
                 {
                     let mut compute_pass = encoder.begin_compute_pass(&Default::default());
                     compute_pass.set_pipeline(&compute_pipeline);

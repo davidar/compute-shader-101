@@ -62,47 +62,31 @@ fn smoothstep(edge0: vec4<f32>, edge1: vec4<f32>, x: vec4<f32>) -> vec4<f32> {
 }
 
 [[stage(compute), workgroup_size(16, 16)]]
+fn main2([[builtin(global_invocation_id)]] global_ix: vec3<u32>) {
+    let id = global_ix.x + global_ix.y * params.width;
+    StorageBuffer0.values[id] = StorageBuffer0.values[id] * 9u / 10u;
+}
+
+[[stage(compute), workgroup_size(16, 16)]]
 fn main([[builtin(global_invocation_id)]] global_ix: vec3<u32>) {
     let resolution = vec2<f32>(f32(params.width), f32(params.height));
-    let fragCoord = vec2<f32>(global_ix.xy) / resolution - vec2<f32>(0.5, 0.5);
     let id = global_ix.x + global_ix.y * params.width;
 
     // Shadertoy-like code can go here.
     var seed = params.iFrame * params.width * params.height + id;
     seed = seed ^ (seed<<13u);
 
-    var c = p2c(rand(&seed) * resolution.xy) * 1.1;
-    var z = vec2<f32>(0.);
-    var n = 0.;
-    for (var i = 0; i < 5000; i = i+1) {
-        z = vec2<f32>(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
-        if (dot(z,z) > 9.) { break; }
-        n = n + 1.;
-    }
-    var z = vec2<f32>(0.);
-    for (var i = 0; i < 5000; i = i+1) {
-        z = vec2<f32>(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
-        if (dot(z,z) > 9.) { break; }
-        let p1 = c2p(z);
-        let p2 = c2p(vec2<f32>(z.x,-z.y));
-        let id1 = u32(p1.x) + u32(p1.y) * params.width;
-        let id2 = u32(p2.x) + u32(p2.y) * params.width;
-        if (n < 50.) {
-            atomicAdd(&StorageBuffer0.values[id1], 1u);
-            atomicAdd(&StorageBuffer0.values[id2], 1u);
-        } else if (n < 500.) {
-            atomicAdd(&StorageBuffer1.values[id1], 1u);
-            atomicAdd(&StorageBuffer1.values[id2], 1u);
-        } else if (n < 5000.) {
-            atomicAdd(&StorageBuffer1.values[id1], 1u << 16u);
-            atomicAdd(&StorageBuffer1.values[id2], 1u << 16u);
-        }
+    for (var i = 0; i < 10; i = i+1) {
+        var p = rand(&seed) * 2. - 1.;
+        p = p + .2 * sin(15. * p.yx + 3. + params.iTime);
+        p = p + .1 * sin(15. * length(p) + 2. + params.iTime);
+        p = (p + 1.)/2. * resolution.xy;
+        let id1 = u32(p.x) + u32(p.y) * params.width;
+        atomicAdd(&StorageBuffer0.values[id1], 1u);
     }
 
-    let x = f32(StorageBuffer1.values[id] >> 16u);
-    let y = f32(StorageBuffer1.values[id] & 0xffffu);
     let z = f32(StorageBuffer0.values[id]);
-    var f = vec4<f32>(x + y + z, y + z, z, 0.) / f32(50u * params.iFrame);
+    var f = vec4<f32>(z) / 500.;
     f = smoothstep(vec4<f32>(0.), vec4<f32>(1.), 2.5 * pow(f, vec4<f32>(1.5, 1.4, 1.3, 1.)));
     textureStore(outputTex, vec2<i32>(global_ix.xy), f);
 }
