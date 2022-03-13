@@ -41,6 +41,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         .request_device(&Default::default(), None)
         .await
         .expect("error creating device");
+    window.set_inner_size(winit::dpi::PhysicalSize::new(1920, 1080));
     let size = window.inner_size();
     let format = surface.get_preferred_format(&adapter).unwrap();
     surface.configure(&device, &wgpu::SurfaceConfiguration {
@@ -48,7 +49,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         format: format,
         width: size.width,
         height: size.height,
-        present_mode: wgpu::PresentMode::Mailbox,
+        present_mode: wgpu::PresentMode::Fifo, // vsync
     });
 
     // uniforms
@@ -76,25 +77,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     let bufb = device.create_texture(&texture_descriptor);
     let sb0 = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: (4 * size.width * size.height).into(),
-        usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
-        mapped_at_creation: false,
-    });
-    let sb1 = device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: (4 * size.width * size.height).into(),
-        usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
-        mapped_at_creation: false,
-    });
-    let sb2 = device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: (4 * size.width * size.height).into(),
-        usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
-        mapped_at_creation: false,
-    });
-    let sb3 = device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: (4 * size.width * size.height).into(),
+        size: (4 * 4 * size.width * size.height).into(),
         usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
         mapped_at_creation: false,
     });
@@ -140,18 +123,6 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 count: None,
             },
             wgpu::BindGroupLayoutEntry {
-                binding: 3,
-                visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage {
-                        read_only: false
-                    },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
                 binding: 4,
                 visibility: wgpu::ShaderStages::COMPUTE,
                 ty: wgpu::BindingType::Texture {
@@ -167,30 +138,6 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
-            wgpu::BindGroupLayoutEntry {
-                binding: 6,
-                visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage {
-                        read_only: false
-                    },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 7,
-                visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage {
-                        read_only: false
-                    },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            },
         ],
     });
     let compute_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -204,19 +151,19 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         module: &compute_shader,
         entry_point: "main",
     });
-    let compute_pipeline2 = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+    let compute_pipeline_image = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: None,
         layout: Some(&compute_pipeline_layout),
         module: &compute_shader,
-        entry_point: "main2",
+        entry_point: "mainImage",
     });
-    let compute_pipelinea = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+    let compute_pipeline_bufa = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: None,
         layout: Some(&compute_pipeline_layout),
         module: &compute_shader,
         entry_point: "bufferA",
     });
-    let compute_pipelineb = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+    let compute_pipeline_bufb = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: None,
         layout: Some(&compute_pipeline_layout),
         module: &compute_shader,
@@ -248,10 +195,6 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 resource: sb0.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
-                binding: 3,
-                resource: sb1.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
                 binding: 4,
                 resource: wgpu::BindingResource::TextureView(&bufa.create_view(&Default::default())),
             },
@@ -259,55 +202,9 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 binding: 5,
                 resource: wgpu::BindingResource::Sampler(&sampler),
             },
-            wgpu::BindGroupEntry {
-                binding: 6,
-                resource: sb2.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 7,
-                resource: sb3.as_entire_binding(),
-            },
         ],
     });
-    let compute_bind_group2 = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: None,
-        layout: &compute_bind_group_layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: params.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::TextureView(&img.create_view(&Default::default())),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: sb0.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 3,
-                resource: sb1.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 4,
-                resource: wgpu::BindingResource::TextureView(&bufa.create_view(&Default::default())),
-            },
-            wgpu::BindGroupEntry {
-                binding: 5,
-                resource: wgpu::BindingResource::Sampler(&sampler),
-            },
-            wgpu::BindGroupEntry {
-                binding: 6,
-                resource: sb2.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 7,
-                resource: sb3.as_entire_binding(),
-            },
-        ],
-    });
-    let compute_bind_groupa = device.create_bind_group(&wgpu::BindGroupDescriptor {
+    let compute_bind_group_bufa = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,
         layout: &compute_bind_group_layout,
         entries: &[
@@ -322,10 +219,6 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
             wgpu::BindGroupEntry {
                 binding: 2,
                 resource: sb0.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 3,
-                resource: sb1.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 4,
@@ -335,17 +228,9 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 binding: 5,
                 resource: wgpu::BindingResource::Sampler(&sampler),
             },
-            wgpu::BindGroupEntry {
-                binding: 6,
-                resource: sb2.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 7,
-                resource: sb3.as_entire_binding(),
-            },
         ],
     });
-    let compute_bind_groupb = device.create_bind_group(&wgpu::BindGroupDescriptor {
+    let compute_bind_group_bufb = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,
         layout: &compute_bind_group_layout,
         entries: &[
@@ -362,24 +247,12 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 resource: sb0.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
-                binding: 3,
-                resource: sb1.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
                 binding: 4,
                 resource: wgpu::BindingResource::TextureView(&bufa.create_view(&Default::default())),
             },
             wgpu::BindGroupEntry {
                 binding: 5,
                 resource: wgpu::BindingResource::Sampler(&sampler),
-            },
-            wgpu::BindGroupEntry {
-                binding: 6,
-                resource: sb2.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 7,
-                resource: sb3.as_entire_binding(),
             },
         ],
     });
@@ -468,29 +341,18 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 });
                 let mut encoder = device.create_command_encoder(&Default::default());
                 encoder.copy_buffer_to_buffer(&params_host, 0, &params, 0, params_bytes.len().try_into().unwrap());
-                {
+                let mut run_compute_pass = |pipeline, bind_group| {
                     let mut compute_pass = encoder.begin_compute_pass(&Default::default());
-                    compute_pass.set_pipeline(&compute_pipelinea);
-                    compute_pass.set_bind_group(0, &compute_bind_groupa, &[]);
+                    compute_pass.set_pipeline(pipeline);
+                    compute_pass.set_bind_group(0, bind_group, &[]);
                     compute_pass.dispatch(size.width / 16, size.height / 16, 1);
-                }
-                {
-                    let mut compute_pass = encoder.begin_compute_pass(&Default::default());
-                    compute_pass.set_pipeline(&compute_pipelineb);
-                    compute_pass.set_bind_group(0, &compute_bind_groupb, &[]);
-                    compute_pass.dispatch(size.width / 16, size.height / 16, 1);
-                }
-                {
-                    let mut compute_pass = encoder.begin_compute_pass(&Default::default());
-                    compute_pass.set_pipeline(&compute_pipeline2);
-                    compute_pass.set_bind_group(0, &compute_bind_group2, &[]);
-                    compute_pass.dispatch(size.width / 16, size.height / 16, 1);
-                }
-                {
-                    let mut compute_pass = encoder.begin_compute_pass(&Default::default());
-                    compute_pass.set_pipeline(&compute_pipeline);
-                    compute_pass.set_bind_group(0, &compute_bind_group, &[]);
-                    compute_pass.dispatch(size.width / 16, size.height / 16, 1);
+                };
+                for _ in 0..4 {
+                    run_compute_pass(&compute_pipeline_bufa, &compute_bind_group_bufa);
+                    run_compute_pass(&compute_pipeline_bufb, &compute_bind_group_bufb);
+                    run_compute_pass(&compute_pipeline, &compute_bind_group);
+                    run_compute_pass(&compute_pipeline_image, &compute_bind_group);
+                    frame_count += 1;
                 }
                 // We use a render pipeline just to copy the output buffer of the compute shader to the
                 // swapchain. It would be nice if we could skip this, but swapchains with storage usage
@@ -515,7 +377,6 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 }
                 queue.submit(Some(encoder.finish()));
                 frame.present();
-                frame_count += 1;
             }
             Event::MainEventsCleared => {
                 window.request_redraw();
