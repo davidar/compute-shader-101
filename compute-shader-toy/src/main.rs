@@ -41,7 +41,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         .request_device(&Default::default(), None)
         .await
         .expect("error creating device");
-    window.set_inner_size(winit::dpi::PhysicalSize::new(1920, 1080));
+    window.set_inner_size(winit::dpi::PhysicalSize::new(1280, 720));
     let size = window.inner_size();
     let format = surface.get_preferred_format(&adapter).unwrap();
     surface.configure(&device, &wgpu::SurfaceConfiguration {
@@ -347,7 +347,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                     compute_pass.set_bind_group(0, bind_group, &[]);
                     compute_pass.dispatch(size.width / 16, size.height / 16, 1);
                 };
-                for _ in 0..4 {
+                for _ in 0..2 {
                     run_compute_pass(&compute_pipeline_bufa, &compute_bind_group_bufa);
                     run_compute_pass(&compute_pipeline_bufb, &compute_bind_group_bufb);
                     run_compute_pass(&compute_pipeline, &compute_bind_group);

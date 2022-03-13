@@ -81,7 +81,7 @@ fn bufferB([[builtin(global_invocation_id)]] global_ix: vec3<u32>) {
     r.z = r.z - dt * 0.25 * (e.x - w.x + n.y - s.y);
 
     let t = f32(params.iFrame) / 120.;
-    let o = resolution/2. * (1. + .75 * vec2<f32>(cos(t/30.), sin(2.7*t/30.)));
+    let o = resolution/2. * (1. + .75 * vec2<f32>(cos(t/15.), sin(2.7*t/15.)));
     r = mix(r, vec4<f32>(0.5 * sin(dt * 2. * t) * sin(dt * t), 0., r.z, 1.), exp(-0.2 * length(fragCoord - o)));
     textureStore(outputTex, vec2<i32>(global_ix.xy), r);
 }
