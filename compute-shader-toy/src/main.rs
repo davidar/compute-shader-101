@@ -320,7 +320,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         ],
     });
 
-    let start_time = std::time::Instant::now();
+    //let start_time = std::time::Instant::now();
     let mut frame_count: u32 = 0;
     event_loop.run(move |event, _, control_flow| {
         // TODO: this may be excessive polling. It really should be synchronized with
@@ -331,7 +331,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 let frame = surface
                     .get_current_texture()
                     .expect("error getting texture from swap chain");
-                let time: f32 = start_time.elapsed().as_micros() as f32 * 1e-6;
+                let time: f32 = 0.;//start_time.elapsed().as_micros() as f32 * 1e-6;
                 let params_data = [size.width, size.height, frame_count, time.to_bits()];
                 let params_bytes = bytemuck::bytes_of(&params_data);
                 let params_host = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -390,8 +390,97 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     });
 }
 
+// https://github.com/rust-windowing/winit/blob/master/examples/web.rs
+// https://github.com/gfx-rs/wgpu/blob/master/wgpu/examples/framework.rs
+
 fn main() {
     let event_loop = EventLoop::new();
     let window = Window::new(&event_loop).unwrap();
+
+    #[cfg(not(target_arch = "wasm32"))]
     pollster::block_on(run(event_loop, window));
+
+    #[cfg(target_arch = "wasm32")]
+    {
+        std::panic::set_hook(Box::new(console_error_panic_hook::hook));
+        let log_list = wasm::create_log_list(&window);
+
+        use wasm_bindgen::{prelude::*, JsCast};
+
+        wasm_bindgen_futures::spawn_local(async move {
+            let setup = run(event_loop, window).await;
+            let start_closure = Closure::once_into_js(move || setup);
+
+            // make sure to handle JS exceptions thrown inside start.
+            // Otherwise wasm_bindgen_futures Queue would break and never handle any tasks again.
+            // This is required, because winit uses JS exception for control flow to escape from `run`.
+            if let Err(error) = call_catch(&start_closure) {
+                let is_control_flow_exception = error.dyn_ref::<js_sys::Error>().map_or(false, |e| {
+                    e.message().includes("Using exceptions for control flow", 0)
+                });
+
+                if !is_control_flow_exception {
+                    web_sys::console::error_1(&error);
+                }
+            }
+
+            #[wasm_bindgen]
+            extern "C" {
+                #[wasm_bindgen(catch, js_namespace = Function, js_name = "prototype.call.call")]
+                fn call_catch(this: &JsValue) -> Result<(), JsValue>;
+            }
+        });
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+mod wasm {
+    use wasm_bindgen::prelude::*;
+    use winit::{event::Event, window::Window};
+
+    #[wasm_bindgen(start)]
+    pub fn run() {
+        console_log::init_with_level(log::Level::Debug).expect("error initializing logger");
+
+        super::main();
+    }
+
+    pub fn create_log_list(window: &Window) -> web_sys::Element {
+        use winit::platform::web::WindowExtWebSys;
+
+        let canvas = window.canvas();
+
+        let window = web_sys::window().unwrap();
+        let document = window.document().unwrap();
+        let body = document.body().unwrap();
+
+        // Set a background color for the canvas to make it easier to tell the where the canvas is for debugging purposes.
+        canvas.style().set_css_text("background-color: crimson;");
+        body.append_child(&canvas).unwrap();
+
+        let log_header = document.create_element("h2").unwrap();
+        log_header.set_text_content(Some("Event Log"));
+        body.append_child(&log_header).unwrap();
+
+        let log_list = document.create_element("ul").unwrap();
+        body.append_child(&log_list).unwrap();
+        log_list
+    }
+
+    pub fn log_event(log_list: &web_sys::Element, event: &Event<()>) {
+        log::debug!("{:?}", event);
+
+        // Getting access to browser logs requires a lot of setup on mobile devices.
+        // So we implement this basic logging system into the page to give developers an easy alternative.
+        // As a bonus its also kind of handy on desktop.
+        if let Event::WindowEvent { event, .. } = &event {
+            let window = web_sys::window().unwrap();
+            let document = window.document().unwrap();
+            let log = document.create_element("li").unwrap();
+            log.set_text_content(Some(&format!("{:?}", event)));
+            log_list
+                .insert_before(&log, log_list.first_child().as_ref())
+                .unwrap();
+        }
+    }
 }

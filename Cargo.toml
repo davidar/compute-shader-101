@@ -1,0 +1,6 @@
+[workspace]
+resolver = "2"
+members = [
+    "compute-shader-toy",
+    "run-wasm",
+]
