@@ -112,13 +112,13 @@ fn main([[builtin(global_invocation_id)]] global_ix: vec3<u32>) {
 fn mainImage([[builtin(global_invocation_id)]] global_ix: vec3<u32>) {
     let id = global_ix.x + global_ix.y * params.width;
     var f = vec4<f32>(0.);
-    f.x = f32(storageBuffer.data[id*4u+0u]) / 256.;
-    f.y = f32(storageBuffer.data[id*4u+1u]) / 256.;
-    f.z = f32(storageBuffer.data[id*4u+2u]) / 256.;
+    f.x = f32(atomicLoad(&storageBuffer.data[id*4u+0u])) / 256.;
+    f.y = f32(atomicLoad(&storageBuffer.data[id*4u+1u])) / 256.;
+    f.z = f32(atomicLoad(&storageBuffer.data[id*4u+2u])) / 256.;
     f = f * sqrt(f) / 5e3;
     f = f * vec4<f32>(.5, .75, 1., 1.);
     textureStore(outputTex, vec2<i32>(global_ix.xy), f);
-    storageBuffer.data[id*4u+0u] = storageBuffer.data[id*4u+0u] * 9u / 10u;
-    storageBuffer.data[id*4u+1u] = storageBuffer.data[id*4u+1u] * 9u / 10u;
-    storageBuffer.data[id*4u+2u] = storageBuffer.data[id*4u+2u] * 9u / 10u;
+    atomicStore(&storageBuffer.data[id*4u+0u], atomicLoad(&storageBuffer.data[id*4u+0u]) * 9u / 10u);
+    atomicStore(&storageBuffer.data[id*4u+1u], atomicLoad(&storageBuffer.data[id*4u+1u]) * 9u / 10u);
+    atomicStore(&storageBuffer.data[id*4u+2u], atomicLoad(&storageBuffer.data[id*4u+2u]) * 9u / 10u);
 }
