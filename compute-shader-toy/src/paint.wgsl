@@ -117,7 +117,7 @@ fn mainImage([[builtin(global_invocation_id)]] global_ix: vec3<u32>) {
     f.z = f32(atomicLoad(&storageBuffer.data[id*4u+2u])) / 256.;
     f = f * sqrt(f) / 5e3;
     f = f * vec4<f32>(.5, .75, 1., 1.);
-    textureStore(outputTex, vec2<i32>(global_ix.xy), f);
+    textureStore(outputTex, vec2<i32>(global_ix.xy), vec4<f32>(f.rgb, 1.));
     atomicStore(&storageBuffer.data[id*4u+0u], atomicLoad(&storageBuffer.data[id*4u+0u]) * 9u / 10u);
     atomicStore(&storageBuffer.data[id*4u+1u], atomicLoad(&storageBuffer.data[id*4u+1u]) * 9u / 10u);
     atomicStore(&storageBuffer.data[id*4u+2u], atomicLoad(&storageBuffer.data[id*4u+2u]) * 9u / 10u);
