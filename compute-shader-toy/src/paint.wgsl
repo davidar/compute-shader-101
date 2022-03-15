@@ -28,8 +28,11 @@ struct StorageBuffer {
 [[group(0), binding(0)]] var<uniform> params: Params;
 [[group(0), binding(1)]] var outputTex: texture_storage_2d<rgba16float,write>;
 [[group(0), binding(2)]] var<storage,read_write> storageBuffer: StorageBuffer;
-[[group(0), binding(4)]] var inputTex: texture_2d<f32>;
+[[group(0), binding(3)]] var inputTexA: texture_2d<f32>;
+[[group(0), binding(4)]] var inputTexB: texture_2d<f32>;
 [[group(0), binding(5)]] var inputSampler: sampler;
+[[group(0), binding(6)]] var outputTexA: texture_storage_2d<rgba16float,write>;
+[[group(0), binding(7)]] var outputTexB: texture_storage_2d<rgba16float,write>;
 
 fn hash44(p: vec4<f32>) -> vec4<f32> {
 	var p4 = fract(p * vec4<f32>(.1031, .1030, .0973, .1099));
@@ -46,11 +49,16 @@ let dt = 1.;
 
 fn A(fragCoord: vec2<f32>) -> vec4<f32> {
     let resolution = vec2<f32>(f32(params.width), f32(params.height));
-    return textureSampleLevel(inputTex, inputSampler, fract(fragCoord / resolution), 0.);
+    return textureSampleLevel(inputTexA, inputSampler, fract(fragCoord / resolution), 0.);
+}
+
+fn B(fragCoord: vec2<f32>) -> vec4<f32> {
+    let resolution = vec2<f32>(f32(params.width), f32(params.height));
+    return textureSampleLevel(inputTexB, inputSampler, fract(fragCoord / resolution), 0.);
 }
 
 fn T(fragCoord: vec2<f32>) -> vec4<f32> {
-    return A(fragCoord - dt * A(fragCoord).xy);
+    return B(fragCoord - dt * B(fragCoord).xy);
 }
 
 [[stage(compute), workgroup_size(16, 16)]]
@@ -66,7 +74,7 @@ fn bufferA([[builtin(global_invocation_id)]] global_ix: vec3<u32>) {
     r.y = r.y - dt * 0.25 * (n.z - s.z);
 
     if (params.iFrame < 3u) { r = vec4<f32>(0.); }
-    textureStore(outputTex, vec2<i32>(global_ix.xy), r);
+    textureStore(outputTexA, vec2<i32>(global_ix.xy), r);
 }
 
 [[stage(compute), workgroup_size(16, 16)]]
@@ -83,7 +91,7 @@ fn bufferB([[builtin(global_invocation_id)]] global_ix: vec3<u32>) {
     let t = f32(params.iFrame) / 120.;
     let o = resolution/2. * (1. + .75 * vec2<f32>(cos(t/15.), sin(2.7*t/15.)));
     r = mix(r, vec4<f32>(0.5 * sin(dt * 2. * t) * sin(dt * t), 0., r.z, 1.), exp(-0.2 * length(fragCoord - o)));
-    textureStore(outputTex, vec2<i32>(global_ix.xy), r);
+    textureStore(outputTexB, vec2<i32>(global_ix.xy), r);
 }
 
 [[stage(compute), workgroup_size(16, 16)]]
