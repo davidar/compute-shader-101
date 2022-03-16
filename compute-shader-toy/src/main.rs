@@ -37,6 +37,12 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         .await
         .expect("error finding adapter");
 
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let adapter_info = adapter.get_info();
+        println!("Using {} ({:?})", adapter_info.name, adapter_info.backend);
+    }
+
     let (device, queue) = adapter
         .request_device(&Default::default(), None)
         .await
@@ -55,11 +61,11 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     // uniforms
     let params = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
-        size: 4 * 4,
+        size: 3 * 4,
         usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
         mapped_at_creation: false,
     });
-    let texture_descriptor = wgpu::TextureDescriptor {
+    let img = device.create_texture(&wgpu::TextureDescriptor {
         label: None,
         size: Extent3d {
             width: size.width,
@@ -71,13 +77,33 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba16Float,
         usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
-    };
-    let img = device.create_texture(&texture_descriptor);
-    // TODO ping pong instead
-    let bufa_read = device.create_texture(&texture_descriptor);
-    let bufa_write = device.create_texture(&texture_descriptor);
-    let bufb_read = device.create_texture(&texture_descriptor);
-    let bufb_write = device.create_texture(&texture_descriptor);
+    });
+    let buf_read = device.create_texture(&wgpu::TextureDescriptor {
+        label: None,
+        size: Extent3d {
+            width: size.width,
+            height: size.height,
+            depth_or_array_layers: 4,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba16Float,
+        usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
+    });
+    let buf_write = device.create_texture(&wgpu::TextureDescriptor {
+        label: None,
+        size: Extent3d {
+            width: size.width,
+            height: size.height,
+            depth_or_array_layers: 4,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba16Float,
+        usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
+    });
     let sb0 = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
         size: (4 * 4 * size.width * size.height).into(),
@@ -88,7 +114,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     // compute pipeline
     let compute_shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
         label: None,
-        source: wgpu::ShaderSource::Wgsl(include_str!("paint.wgsl").into()),
+        source: wgpu::ShaderSource::Wgsl(include_str!("compute.wgsl").into()),
     });
     let compute_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: None,
@@ -131,17 +157,17 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 ty: wgpu::BindingType::Texture {
                     multisampled: false,
                     sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
+                    view_dimension: wgpu::TextureViewDimension::D2Array,
                 },
                 count: None,
             },
             wgpu::BindGroupLayoutEntry {
                 binding: 4,
                 visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::Texture {
-                    multisampled: false,
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2,
+                ty: wgpu::BindingType::StorageTexture {
+                    access: wgpu::StorageTextureAccess::WriteOnly,
+                    format: wgpu::TextureFormat::Rgba16Float,
+                    view_dimension: wgpu::TextureViewDimension::D2Array,
                 },
                 count: None,
             },
@@ -149,26 +175,6 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 binding: 5,
                 visibility: wgpu::ShaderStages::COMPUTE,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 6,
-                visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::StorageTexture {
-                    access: wgpu::StorageTextureAccess::WriteOnly,
-                    format: wgpu::TextureFormat::Rgba16Float,
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 7,
-                visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::StorageTexture {
-                    access: wgpu::StorageTextureAccess::WriteOnly,
-                    format: wgpu::TextureFormat::Rgba16Float,
-                    view_dimension: wgpu::TextureViewDimension::D2,
-                },
                 count: None,
             },
         ],
@@ -203,12 +209,8 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         entry_point: "bufferB",
     });
     let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        address_mode_u: wgpu::AddressMode::Repeat,
-        address_mode_v: wgpu::AddressMode::Repeat,
-        address_mode_w: wgpu::AddressMode::Repeat,
         mag_filter: wgpu::FilterMode::Linear,
         min_filter: wgpu::FilterMode::Linear,
-        mipmap_filter: wgpu::FilterMode::Linear,
         ..Default::default()
     });
     let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -218,18 +220,22 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
             wgpu::BindGroupEntry { binding: 0, resource: params.as_entire_binding() },
             wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&img.create_view(&Default::default())) },
             wgpu::BindGroupEntry { binding: 2, resource: sb0.as_entire_binding() },
-            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&bufa_read.create_view(&Default::default())) },
-            wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&bufb_read.create_view(&Default::default())) },
+            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&buf_read.create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(wgpu::TextureViewDimension::D2Array),
+                ..Default::default()
+            })) },
+            wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&buf_write.create_view(&wgpu::TextureViewDescriptor {
+                dimension: Some(wgpu::TextureViewDimension::D2Array),
+                ..Default::default()
+            })) },
             wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::Sampler(&sampler) },
-            wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::TextureView(&bufa_write.create_view(&Default::default())) },
-            wgpu::BindGroupEntry { binding: 7, resource: wgpu::BindingResource::TextureView(&bufb_write.create_view(&Default::default())) },
         ],
     });
 
     // render pipeline
     let render_shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
         label: None,
-        source: wgpu::ShaderSource::Wgsl(include_str!("copy.wgsl").into()),
+        source: wgpu::ShaderSource::Wgsl(include_str!("blit.wgsl").into()),
     });
     let render_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: None,
@@ -283,7 +289,6 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         ],
     });
 
-    //let start_time = std::time::Instant::now();
     let mut frame_count: u32 = 0;
     event_loop.run(move |event, _, control_flow| {
         // TODO: this may be excessive polling. It really should be synchronized with
@@ -294,8 +299,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 let frame = surface
                     .get_current_texture()
                     .expect("error getting texture from swap chain");
-                let time: f32 = 0.;//start_time.elapsed().as_micros() as f32 * 1e-6;
-                let params_data = [size.width, size.height, frame_count, time.to_bits()];
+                let params_data = [size.width, size.height, frame_count];
                 let params_bytes = bytemuck::bytes_of(&params_data);
                 let params_host = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: None,
@@ -305,49 +309,39 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 let mut encoder = device.create_command_encoder(&Default::default());
                 encoder.copy_buffer_to_buffer(&params_host, 0, &params, 0, params_bytes.len().try_into().unwrap());
                 let run_compute_pass = |encoder: &mut wgpu::CommandEncoder, pipeline| {
-                    let mut compute_pass = encoder.begin_compute_pass(&Default::default());
-                    compute_pass.set_pipeline(pipeline);
-                    compute_pass.set_bind_group(0, &compute_bind_group, &[]);
-                    compute_pass.dispatch(size.width / 16, size.height / 16, 1);
+                    {
+                        let mut compute_pass = encoder.begin_compute_pass(&Default::default());
+                        compute_pass.set_pipeline(pipeline);
+                        compute_pass.set_bind_group(0, &compute_bind_group, &[]);
+                        compute_pass.dispatch(size.width / 16, size.height / 16, 1);
+                    }
+                    encoder.copy_texture_to_texture(
+                        wgpu::ImageCopyTexture {
+                            texture: &buf_write,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        wgpu::ImageCopyTexture {
+                            texture: &buf_read,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d::ZERO,
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        Extent3d {
+                            width: size.width,
+                            height: size.height,
+                            depth_or_array_layers: 4,
+                        });
                 };
                 for _ in 0..2 {
                     run_compute_pass(&mut encoder, &compute_pipeline_bufa);
-                    encoder.copy_texture_to_texture(
-                        wgpu::ImageCopyTexture {
-                            texture: &bufa_write,
-                            mip_level: 0,
-                            origin: wgpu::Origin3d::ZERO,
-                            aspect: wgpu::TextureAspect::All,
-                        },
-                        wgpu::ImageCopyTexture {
-                            texture: &bufa_read,
-                            mip_level: 0,
-                            origin: wgpu::Origin3d::ZERO,
-                            aspect: wgpu::TextureAspect::All,
-                        },
-                        texture_descriptor.size);
                     run_compute_pass(&mut encoder, &compute_pipeline_bufb);
-                    encoder.copy_texture_to_texture(
-                        wgpu::ImageCopyTexture {
-                            texture: &bufb_write,
-                            mip_level: 0,
-                            origin: wgpu::Origin3d::ZERO,
-                            aspect: wgpu::TextureAspect::All,
-                        },
-                        wgpu::ImageCopyTexture {
-                            texture: &bufb_read,
-                            mip_level: 0,
-                            origin: wgpu::Origin3d::ZERO,
-                            aspect: wgpu::TextureAspect::All,
-                        },
-                        texture_descriptor.size);
                     run_compute_pass(&mut encoder, &compute_pipeline);
                     run_compute_pass(&mut encoder, &compute_pipeline_image);
                     frame_count += 1;
                 }
-                // We use a render pipeline just to copy the output buffer of the compute shader to the
-                // swapchain. It would be nice if we could skip this, but swapchains with storage usage
-                // are not fully portable.
+                // blit the output texture to the framebuffer
                 {
                     let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
                     let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
