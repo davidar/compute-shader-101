@@ -30,3 +30,8 @@ var r_sampler: sampler;
 fn fs_main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
     return textureSample(r_color, r_sampler, in.tex_coords);
 }
+
+[[stage(fragment)]]
+fn fs_main_srgb(in: VertexOutput) -> [[location(0)]] vec4<f32> {
+    return pow(textureSample(r_color, r_sampler, in.tex_coords), vec4<f32>(1./2.2));
+}

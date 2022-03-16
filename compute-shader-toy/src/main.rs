@@ -36,13 +36,6 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         })
         .await
         .expect("error finding adapter");
-
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        let adapter_info = adapter.get_info();
-        println!("Using {} ({:?})", adapter_info.name, adapter_info.backend);
-    }
-
     let (device, queue) = adapter
         .request_device(&Default::default(), None)
         .await
@@ -50,6 +43,11 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     window.set_inner_size(winit::dpi::PhysicalSize::new(1280, 720));
     let size = window.inner_size();
     let format = surface.get_preferred_format(&adapter).unwrap();
+
+    let adapter_info = adapter.get_info();
+    log::info!("Using {} ({:?})", adapter_info.name, adapter_info.backend);
+    log::info!("Surface format: {:?}", format);
+
     surface.configure(&device, &wgpu::SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         format: format,
@@ -76,7 +74,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba16Float,
-        usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
+        usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
     });
     let buf_read = device.create_texture(&wgpu::TextureDescriptor {
         label: None,
@@ -89,7 +87,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba16Float,
-        usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
+        usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
     });
     let buf_write = device.create_texture(&wgpu::TextureDescriptor {
         label: None,
@@ -102,7 +100,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba16Float,
-        usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
+        usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::STORAGE_BINDING,
     });
     let sb0 = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
@@ -280,6 +278,28 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         multisample: wgpu::MultisampleState::default(),
         multiview: None,
     });
+    let render_pipeline_srgb = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: None,
+        layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: &[&render_bind_group_layout],
+            push_constant_ranges: &[],
+        })),
+        vertex: wgpu::VertexState {
+            module: &render_shader,
+            entry_point: "vs_main",
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &render_shader,
+            entry_point: "fs_main_srgb",
+            targets: &[format.into()],
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+    });
     let render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,
         layout: &render_bind_group_layout,
@@ -356,7 +376,11 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                         }],
                         depth_stencil_attachment: None,
                     });
-                    render_pass.set_pipeline(&render_pipeline);
+                    match format {
+                        wgpu::TextureFormat::Bgra8Unorm => render_pass.set_pipeline(&render_pipeline_srgb),
+                        wgpu::TextureFormat::Bgra8UnormSrgb => render_pass.set_pipeline(&render_pipeline),
+                        _ => panic!("unrecognised surface format")
+                    }
                     render_pass.set_bind_group(0, &render_bind_group, &[]);
                     render_pass.draw(0..3, 0..2);
                 }
@@ -383,7 +407,11 @@ fn main() {
     let window = Window::new(&event_loop).unwrap();
 
     #[cfg(not(target_arch = "wasm32"))]
-    pollster::block_on(run(event_loop, window));
+    {
+        env_logger::init_from_env(
+            env_logger::Env::default().filter_or(env_logger::DEFAULT_FILTER_ENV, "info"));
+        pollster::block_on(run(event_loop, window));
+    }
 
     #[cfg(target_arch = "wasm32")]
     {
