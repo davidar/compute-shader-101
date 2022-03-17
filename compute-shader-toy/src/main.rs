@@ -63,6 +63,11 @@ impl Spawner {
 }
 
 async fn run(event_loop: EventLoop<()>, window: Window) {
+    let shader = include_str!("caustics.wgsl");
+    let entry_points = ["main_velocity", "main_pressure", "main_caustics", "main_image"];
+    //let shader = include_str!("buddhabrot.wgsl");
+    //let entry_points = ["main_hist", "main_image"];
+
     let instance = wgpu::Instance::new(wgpu::Backends::PRIMARY);
     let surface = unsafe { instance.create_surface(&window) };
     let adapter = instance
@@ -144,7 +149,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     // compute pipeline
     let compute_shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
         label: None,
-        source: wgpu::ShaderSource::Wgsl(include_str!("compute.wgsl").into()),
+        source: wgpu::ShaderSource::Wgsl(shader.into()),
     });
     let compute_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: None,
@@ -220,30 +225,12 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         bind_group_layouts: &[&compute_bind_group_layout],
         push_constant_ranges: &[],
     });
-    let compute_pipeline_velocity = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: None,
-        layout: Some(&compute_pipeline_layout),
-        module: &compute_shader,
-        entry_point: "main_velocity",
-    });
-    let compute_pipeline_pressure = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: None,
-        layout: Some(&compute_pipeline_layout),
-        module: &compute_shader,
-        entry_point: "main_pressure",
-    });
-    let compute_pipeline_caustics = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: None,
-        layout: Some(&compute_pipeline_layout),
-        module: &compute_shader,
-        entry_point: "main_caustics",
-    });
-    let compute_pipeline_image = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: None,
-        layout: Some(&compute_pipeline_layout),
-        module: &compute_shader,
-        entry_point: "main_image",
-    });
+    let compute_pipelines = entry_points.map(|name| device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: None,
+            layout: Some(&compute_pipeline_layout),
+            module: &compute_shader,
+            entry_point: name,
+        }));
     let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,
         layout: &compute_bind_group_layout,
@@ -391,15 +378,17 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                         });
                 };
                 for _ in 0..2 {
-                    run_compute_pass(&mut encoder, &compute_pipeline_velocity);
-                    run_compute_pass(&mut encoder, &compute_pipeline_pressure);
-                    run_compute_pass(&mut encoder, &compute_pipeline_caustics);
-                    run_compute_pass(&mut encoder, &compute_pipeline_image);
+                    for pipeline in &compute_pipelines {
+                        run_compute_pass(&mut encoder, pipeline);
+                    }
                     frame_count += 1;
                 }
                 // blit the output texture to the framebuffer
                 {
-                    let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
+                    let view = frame.texture.create_view(&wgpu::TextureViewDescriptor {
+                        format: Some(format),
+                        ..Default::default()
+                    });
                     let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                         label: None,
                         color_attachments: &[wgpu::RenderPassColorAttachment {
@@ -413,6 +402,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                         depth_stencil_attachment: None,
                     });
                     match format {
+                        // TODO use sRGB viewFormats instead once the API stabilises?
                         wgpu::TextureFormat::Bgra8Unorm => render_pass.set_pipeline(&render_pipeline_srgb),
                         wgpu::TextureFormat::Bgra8UnormSrgb => render_pass.set_pipeline(&render_pipeline),
                         _ => panic!("unrecognised surface format")

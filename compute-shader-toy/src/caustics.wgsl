@@ -22,11 +22,6 @@ fn hash44(p: vec4<f32>) -> vec4<f32> {
     return fract((p4.xxyz+p4.yzzw)*p4.zywx);
 }
 
-fn smoothstep(edge0: vec4<f32>, edge1: vec4<f32>, x: vec4<f32>) -> vec4<f32> {
-    let t = clamp((x - edge0) / (edge1 - edge0), vec4<f32>(0.0), vec4<f32>(1.0));
-    return t * t * (3.0 - 2.0 * t);
-}
-
 let dt = 1.;
 let n = vec2<f32>(0., 1.);
 let e = vec2<f32>(1., 0.);
