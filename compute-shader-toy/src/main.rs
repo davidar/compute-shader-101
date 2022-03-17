@@ -412,7 +412,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                         _ => panic!("unrecognised surface format")
                     }
                     render_pass.set_bind_group(0, &render_bind_group, &[]);
-                    render_pass.draw(0..3, 0..2);
+                    render_pass.draw(0..3, 0..1);
                 }
                 queue.submit(Some(encoder.finish()));
                 spawner.spawn_local(staging_belt.recall());
