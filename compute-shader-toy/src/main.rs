@@ -63,10 +63,10 @@ impl Spawner {
 }
 
 async fn run(event_loop: EventLoop<()>, window: Window) {
-    let shader = include_str!("caustics.wgsl");
-    let entry_points = ["main_velocity", "main_pressure", "main_caustics", "main_image"];
-    //let shader = include_str!("buddhabrot.wgsl");
-    //let entry_points = ["main_hist", "main_image"];
+    //let shader = include_str!("caustics.wgsl");
+    //let entry_points = ["main_velocity", "main_pressure", "main_caustics", "main_image"];
+    let shader = include_str!("buddhabrot.wgsl");
+    let entry_points = ["main_hist", "main_image"];
 
     let instance = wgpu::Instance::new(wgpu::Backends::PRIMARY);
     let surface = unsafe { instance.create_surface(&window) };
@@ -377,7 +377,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                             depth_or_array_layers: 4,
                         });
                 };
-                for _ in 0..2 {
+                for _ in 0..4 {
                     for pipeline in &compute_pipelines {
                         run_compute_pass(&mut encoder, pipeline);
                     }
