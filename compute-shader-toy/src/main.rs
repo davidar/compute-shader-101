@@ -204,6 +204,12 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
             wgpu::BindGroupLayoutEntry {
                 binding: 5,
                 visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                count: None,
+            },
+            wgpu::BindGroupLayoutEntry {
+                binding: 6,
+                visibility: wgpu::ShaderStages::COMPUTE,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
             },
@@ -214,34 +220,29 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         bind_group_layouts: &[&compute_bind_group_layout],
         push_constant_ranges: &[],
     });
-    let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+    let compute_pipeline_velocity = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: None,
         layout: Some(&compute_pipeline_layout),
         module: &compute_shader,
-        entry_point: "main",
+        entry_point: "main_velocity",
+    });
+    let compute_pipeline_pressure = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: None,
+        layout: Some(&compute_pipeline_layout),
+        module: &compute_shader,
+        entry_point: "main_pressure",
+    });
+    let compute_pipeline_caustics = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: None,
+        layout: Some(&compute_pipeline_layout),
+        module: &compute_shader,
+        entry_point: "main_caustics",
     });
     let compute_pipeline_image = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: None,
         layout: Some(&compute_pipeline_layout),
         module: &compute_shader,
-        entry_point: "mainImage",
-    });
-    let compute_pipeline_bufa = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: None,
-        layout: Some(&compute_pipeline_layout),
-        module: &compute_shader,
-        entry_point: "bufferA",
-    });
-    let compute_pipeline_bufb = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: None,
-        layout: Some(&compute_pipeline_layout),
-        module: &compute_shader,
-        entry_point: "bufferB",
-    });
-    let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-        mag_filter: wgpu::FilterMode::Linear,
-        min_filter: wgpu::FilterMode::Linear,
-        ..Default::default()
+        entry_point: "main_image",
     });
     let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,
@@ -258,7 +259,12 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 dimension: Some(wgpu::TextureViewDimension::D2Array),
                 ..Default::default()
             })) },
-            wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::Sampler(&sampler) },
+            wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::Sampler(&device.create_sampler(&Default::default())) },
+            wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::Sampler(&device.create_sampler(&wgpu::SamplerDescriptor {
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                ..Default::default()
+            })) },
         ],
     });
 
@@ -385,9 +391,9 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                         });
                 };
                 for _ in 0..2 {
-                    run_compute_pass(&mut encoder, &compute_pipeline_bufa);
-                    run_compute_pass(&mut encoder, &compute_pipeline_bufb);
-                    run_compute_pass(&mut encoder, &compute_pipeline);
+                    run_compute_pass(&mut encoder, &compute_pipeline_velocity);
+                    run_compute_pass(&mut encoder, &compute_pipeline_pressure);
+                    run_compute_pass(&mut encoder, &compute_pipeline_caustics);
                     run_compute_pass(&mut encoder, &compute_pipeline_image);
                     frame_count += 1;
                 }
