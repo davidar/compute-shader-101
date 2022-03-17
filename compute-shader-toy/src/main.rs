@@ -16,7 +16,6 @@
 
 //! A simple compute shader example that draws into a window, based on wgpu.
 
-use wgpu::util::DeviceExt;
 use wgpu::{BufferUsages, Extent3d};
 
 use winit::{
@@ -24,6 +23,44 @@ use winit::{
     event_loop::{ControlFlow, EventLoop},
     window::Window,
 };
+
+#[cfg(not(target_arch = "wasm32"))]
+pub struct Spawner<'a> {
+    executor: async_executor::LocalExecutor<'a>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl<'a> Spawner<'a> {
+    fn new() -> Self {
+        Self {
+            executor: async_executor::LocalExecutor::new(),
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn spawn_local(&self, future: impl std::future::Future<Output = ()> + 'a) {
+        self.executor.spawn(future).detach();
+    }
+
+    fn run_until_stalled(&self) {
+        while self.executor.try_tick() {}
+    }
+}
+
+#[cfg(target_arch = "wasm32")]
+pub struct Spawner {}
+
+#[cfg(target_arch = "wasm32")]
+impl Spawner {
+    fn new() -> Self {
+        Self {}
+    }
+
+    #[allow(dead_code)]
+    pub fn spawn_local(&self, future: impl std::future::Future<Output = ()> + 'static) {
+        wasm_bindgen_futures::spawn_local(future);
+    }
+}
 
 async fn run(event_loop: EventLoop<()>, window: Window) {
     let instance = wgpu::Instance::new(wgpu::Backends::PRIMARY);
@@ -43,11 +80,6 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     window.set_inner_size(winit::dpi::PhysicalSize::new(1280, 720));
     let size = window.inner_size();
     let format = surface.get_preferred_format(&adapter).unwrap();
-
-    let adapter_info = adapter.get_info();
-    log::info!("Using {} ({:?})", adapter_info.name, adapter_info.backend);
-    log::info!("Surface format: {:?}", format);
-
     surface.configure(&device, &wgpu::SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         format: format,
@@ -309,6 +341,8 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         ],
     });
 
+    let spawner = Spawner::new();
+    let mut staging_belt = wgpu::util::StagingBelt::new(0x100);
     let mut frame_count: u32 = 0;
     event_loop.run(move |event, _, control_flow| {
         // TODO: this may be excessive polling. It really should be synchronized with
@@ -321,13 +355,9 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                     .expect("error getting texture from swap chain");
                 let params_data = [size.width, size.height, frame_count];
                 let params_bytes = bytemuck::bytes_of(&params_data);
-                let params_host = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: None,
-                    contents: params_bytes,
-                    usage: BufferUsages::COPY_SRC,
-                });
                 let mut encoder = device.create_command_encoder(&Default::default());
-                encoder.copy_buffer_to_buffer(&params_host, 0, &params, 0, params_bytes.len().try_into().unwrap());
+                staging_belt.write_buffer(&mut encoder, &params, 0, wgpu::BufferSize::new(params_bytes.len() as wgpu::BufferAddress).unwrap(), &device).copy_from_slice(params_bytes);
+                staging_belt.finish();
                 let run_compute_pass = |encoder: &mut wgpu::CommandEncoder, pipeline| {
                     {
                         let mut compute_pass = encoder.begin_compute_pass(&Default::default());
@@ -385,7 +415,10 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                     render_pass.draw(0..3, 0..2);
                 }
                 queue.submit(Some(encoder.finish()));
+                spawner.spawn_local(staging_belt.recall());
                 frame.present();
+                #[cfg(not(target_arch = "wasm32"))]
+                spawner.run_until_stalled();
             }
             Event::MainEventsCleared => {
                 window.request_redraw();
