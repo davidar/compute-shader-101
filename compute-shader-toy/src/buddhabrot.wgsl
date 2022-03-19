@@ -33,11 +33,12 @@ fn smoothstep(edge0: vec3<f32>, edge1: vec3<f32>, x: vec3<f32>) -> vec3<f32> {
 fn main_hist([[builtin(global_invocation_id)]] global_id: vec3<u32>) {
     let resolution = vec2<f32>(f32(params.width), f32(params.height));
     var seed = global_id.x + global_id.y * params.width + params.frame * params.width * params.height;
+    for (var iter = 0; iter < 8; iter = iter + 1) {
     let aspect = resolution.xy / resolution.y;
     let uv  = vec2<f32>(f32(global_id.x) + pcg(&seed), f32(global_id.y) + pcg(&seed)) / resolution.xy;
     let uv0 = vec2<f32>(f32(global_id.x) + pcg(&seed), f32(global_id.y) + pcg(&seed)) / resolution.xy;
-    let c  = (uv  * 2. - 1.) * aspect - vec2<f32>(.0, 0.);
-    let z0 = (uv0 * 2. - 1.) * aspect - vec2<f32>(.0, 0.);
+    let c  = (uv  * 2. - 1.) * aspect * 1.5;
+    let z0 = (uv0 * 2. - 1.) * aspect * 1.5;
     var z = z0;
     var n = 0;
     for (n = 0; n < 2500; n = n + 1) {
@@ -48,8 +49,8 @@ fn main_hist([[builtin(global_invocation_id)]] global_id: vec3<u32>) {
     for (var i = 0; i < 2500; i = i + 1) {
         z = vec2<f32>(z.x*z.x - z.y*z.y, 2.0*z.x*z.y) + c;
         if (dot(z,z) > 4.) { break; }
-        let t = f32(params.frame) / 2000.;
-        let p = (vec2<f32>(cos(t) * z.x + sin(t) * c.x, cos(t) * z.y + sin(t) * c.y) + vec2<f32>(.0, 0.)) / aspect * .5 + .5;
+        let t = f32(params.frame) / 60.;
+        let p = (cos(.3*t) * z + sin(.3*t) * c) / 1.5 / aspect * .5 + .5;
         let id1 = u32(resolution.x * p.x) + u32(resolution.y * p.y) * params.width;
         let id2 = u32(resolution.x * p.x) + u32(resolution.y * (1. - p.y)) * params.width;
         if (n < 25) {
@@ -63,6 +64,7 @@ fn main_hist([[builtin(global_invocation_id)]] global_id: vec3<u32>) {
             atomicAdd(&buf.data[id2*4u+0u], 1u);
         }
     }
+    }
 }
 
 [[stage(compute), workgroup_size(16, 16)]]
@@ -74,7 +76,7 @@ fn main_image([[builtin(global_invocation_id)]] global_id: vec3<u32>) {
     var r = vec3<f32>(x + y + z, y + z, z) / 3e3;
     r = smoothstep(vec3<f32>(0.), vec3<f32>(1.), 2.5 * pow(r, vec3<f32>(.9, .8, .7)));
     textureStore(col, vec2<i32>(global_id.xy), vec4<f32>(r, 1.));
-    atomicStore(&buf.data[id*4u+0u], u32(x * .97));
-    atomicStore(&buf.data[id*4u+1u], u32(y * .97));
-    atomicStore(&buf.data[id*4u+2u], u32(z * .97));
+    atomicStore(&buf.data[id*4u+0u], u32(x * .7));
+    atomicStore(&buf.data[id*4u+1u], u32(y * .7));
+    atomicStore(&buf.data[id*4u+2u], u32(z * .7));
 }

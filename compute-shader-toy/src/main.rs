@@ -377,7 +377,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                             depth_or_array_layers: 4,
                         });
                 };
-                for _ in 0..4 {
+                for _ in 0..1 {
                     for pipeline in &compute_pipelines {
                         run_compute_pass(&mut encoder, pipeline);
                     }
