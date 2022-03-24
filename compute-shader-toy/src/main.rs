@@ -63,10 +63,10 @@ impl Spawner {
 }
 
 async fn run(event_loop: EventLoop<()>, window: Window) {
-    //let shader = include_str!("caustics.wgsl");
-    //let entry_points = ["main_velocity", "main_pressure", "main_caustics", "main_image"];
-    let shader = include_str!("buddhabrot.wgsl");
-    let entry_points = ["main_hist", "main_image"];
+    let shader = include_str!("caustics.wgsl");
+    let entry_points = ["main_velocity", "main_pressure", "main_caustics", "main_image"];
+    //let shader = include_str!("buddhabrot.wgsl");
+    //let entry_points = ["main_hist", "main_image"];
 
     let instance = wgpu::Instance::new(wgpu::Backends::PRIMARY);
     let surface = unsafe { instance.create_surface(&window) };
@@ -90,7 +90,8 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         format: format,
         width: size.width,
         height: size.height,
-        present_mode: wgpu::PresentMode::Fifo, // vsync
+        //present_mode: wgpu::PresentMode::Fifo, // vsync
+        present_mode: wgpu::PresentMode::Mailbox,
     });
 
     // uniforms
@@ -113,7 +114,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         format: wgpu::TextureFormat::Rgba16Float,
         usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
     });
-    let buf_read = device.create_texture(&wgpu::TextureDescriptor {
+    /*let buf_read = device.create_texture(&wgpu::TextureDescriptor {
         label: None,
         size: Extent3d {
             width: size.width,
@@ -138,10 +139,16 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         dimension: wgpu::TextureDimension::D2,
         format: wgpu::TextureFormat::Rgba16Float,
         usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::STORAGE_BINDING,
-    });
+    });*/
     let sb0 = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
         size: (4 * 4 * size.width * size.height).into(),
+        usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
+        mapped_at_creation: false,
+    });
+    let sbf = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: (4 * 4 * 4 * size.width * size.height).into(),
         usage: BufferUsages::COPY_DST | BufferUsages::STORAGE | BufferUsages::UNIFORM,
         mapped_at_creation: false,
     });
@@ -186,7 +193,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 },
                 count: None,
             },
-            wgpu::BindGroupLayoutEntry {
+            /*wgpu::BindGroupLayoutEntry {
                 binding: 3,
                 visibility: wgpu::ShaderStages::COMPUTE,
                 ty: wgpu::BindingType::Texture {
@@ -217,6 +224,18 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 visibility: wgpu::ShaderStages::COMPUTE,
                 ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                 count: None,
+            },*/
+            wgpu::BindGroupLayoutEntry {
+                binding: 7,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage {
+                        read_only: false
+                    },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
             },
         ],
     });
@@ -238,7 +257,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
             wgpu::BindGroupEntry { binding: 0, resource: params.as_entire_binding() },
             wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&img.create_view(&Default::default())) },
             wgpu::BindGroupEntry { binding: 2, resource: sb0.as_entire_binding() },
-            wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&buf_read.create_view(&wgpu::TextureViewDescriptor {
+            /*wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&buf_read.create_view(&wgpu::TextureViewDescriptor {
                 dimension: Some(wgpu::TextureViewDimension::D2Array),
                 ..Default::default()
             })) },
@@ -251,7 +270,8 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 mag_filter: wgpu::FilterMode::Linear,
                 min_filter: wgpu::FilterMode::Linear,
                 ..Default::default()
-            })) },
+            })) },*/
+            wgpu::BindGroupEntry { binding: 7, resource: sbf.as_entire_binding() },
         ],
     });
 
@@ -337,12 +357,31 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
     let spawner = Spawner::new();
     let mut staging_belt = wgpu::util::StagingBelt::new(0x100);
     let mut frame_count: u32 = 0;
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut last_frame_inst = std::time::Instant::now();
+    #[cfg(not(target_arch = "wasm32"))]
+    let mut accum_time = 0.;
+    let mut frame_count2 = 0;
     event_loop.run(move |event, _, control_flow| {
         // TODO: this may be excessive polling. It really should be synchronized with
         // swapchain presentation, but that's currently underbaked in wgpu.
         *control_flow = ControlFlow::Poll;
         match event {
             Event::RedrawRequested(_) => {
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    accum_time += last_frame_inst.elapsed().as_secs_f32();
+                    last_frame_inst = std::time::Instant::now();
+                    frame_count2 += 1;
+                    if frame_count2 == 100 {
+                        println!(
+                            "Avg frame time {}ms",
+                            accum_time * 1000.0 / frame_count2 as f32
+                        );
+                        accum_time = 0.0;
+                        frame_count2 = 0;
+                    }
+                }
                 let frame = surface
                     .get_current_texture()
                     .expect("error getting texture from swap chain");
@@ -358,7 +397,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                         compute_pass.set_bind_group(0, &compute_bind_group, &[]);
                         compute_pass.dispatch(size.width / 16, size.height / 16, 1);
                     }
-                    encoder.copy_texture_to_texture(
+                    /*encoder.copy_texture_to_texture(
                         wgpu::ImageCopyTexture {
                             texture: &buf_write,
                             mip_level: 0,
@@ -375,7 +414,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                             width: size.width,
                             height: size.height,
                             depth_or_array_layers: 4,
-                        });
+                        });*/
                 };
                 for _ in 0..1 {
                     for pipeline in &compute_pipelines {
