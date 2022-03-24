@@ -13,22 +13,21 @@ type float3 = vec3<f32>;
 type float4 = vec4<f32>;
 
 struct Params {
-    width: uint;
-    height: uint;
-    frame: uint;
+    frame: int;
 };
 
-struct StorageBuffer {
+struct AtomicStorageBuffer {
     data: array<atomic<i32>>;
+};
+
+struct FloatStorageBuffer {
+    data: array<vec4<f32>>;
 };
 
 [[group(0), binding(0)]] var<uniform> params: Params;
 [[group(0), binding(1)]] var col: texture_storage_2d<rgba16float,write>;
-[[group(0), binding(2)]] var<storage,read_write> buf: StorageBuffer;
-[[group(0), binding(3)]] var tex: texture_2d_array<f32>;
-[[group(0), binding(4)]] var texs: texture_storage_2d_array<rgba16float,write>;
-[[group(0), binding(5)]] var nearest: sampler;
-[[group(0), binding(6)]] var bilinear: sampler;
+[[group(0), binding(2)]] var<storage,read_write> buf: AtomicStorageBuffer;
+[[group(0), binding(3)]] var<storage,read_write> fbuf: FloatStorageBuffer;
 
 // https://www.jcgt.org/published/0009/03/02/
 // https://www.pcg-random.org/
@@ -45,8 +44,8 @@ fn smoothstep(edge0: float3, edge1: float3, x: float3) -> float3 {
 
 [[stage(compute), workgroup_size(16, 16)]]
 fn main_hist([[builtin(global_invocation_id)]] global_id: uint3) {
-    let resolution = float2(float(params.width), float(params.height));
-    var seed = global_id.x + global_id.y * params.width + params.frame * params.width * params.height;
+    let resolution = float2(textureDimensions(col));
+    var seed = global_id.x + global_id.y * uint(resolution.x) + uint(params.frame) * uint(resolution.x * resolution.y);
     for (var iter = 0; iter < 8; iter = iter + 1) {
     let aspect = resolution.xy / resolution.y;
     let uv  = float2(float(global_id.x) + pcg(&seed), float(global_id.y) + pcg(&seed)) / resolution.xy;
@@ -65,17 +64,17 @@ fn main_hist([[builtin(global_invocation_id)]] global_id: uint3) {
         if (dot(z,z) > 4.) { break; }
         let t = float(params.frame) / 60.;
         let p = (cos(.3*t) * z + sin(.3*t) * c) / 1.5 / aspect * .5 + .5;
-        let id1 = uint(resolution.x * p.x) + uint(resolution.y * p.y) * params.width;
-        let id2 = uint(resolution.x * p.x) + uint(resolution.y * (1. - p.y)) * params.width;
+        let id1 = int(resolution.x * p.x) + int(resolution.y * p.y) * int(resolution.x);
+        let id2 = int(resolution.x * p.x) + int(resolution.y * (1. - p.y)) * int(resolution.x);
         if (n < 25) {
-            atomicAdd(&buf.data[id1*4u+2u], 1);
-            atomicAdd(&buf.data[id2*4u+2u], 1);
+            atomicAdd(&buf.data[id1*4+2], 1);
+            atomicAdd(&buf.data[id2*4+2], 1);
         } else if (n < 250) {
-            atomicAdd(&buf.data[id1*4u+1u], 1);
-            atomicAdd(&buf.data[id2*4u+1u], 1);
+            atomicAdd(&buf.data[id1*4+1], 1);
+            atomicAdd(&buf.data[id2*4+1], 1);
         } else if (n < 2500) {
-            atomicAdd(&buf.data[id1*4u+0u], 1);
-            atomicAdd(&buf.data[id2*4u+0u], 1);
+            atomicAdd(&buf.data[id1*4+0], 1);
+            atomicAdd(&buf.data[id2*4+0], 1);
         }
     }
     }
@@ -83,14 +82,15 @@ fn main_hist([[builtin(global_invocation_id)]] global_id: uint3) {
 
 [[stage(compute), workgroup_size(16, 16)]]
 fn main_image([[builtin(global_invocation_id)]] global_id: uint3) {
-    let id = global_id.x + global_id.y * params.width;
-    let x = float(atomicLoad(&buf.data[id*4u+0u]));
-    let y = float(atomicLoad(&buf.data[id*4u+1u]));
-    let z = float(atomicLoad(&buf.data[id*4u+2u]));
+    let resolution = float2(textureDimensions(col));
+    let id = int(global_id.x) + int(global_id.y) * int(resolution.x);
+    let x = float(atomicLoad(&buf.data[id*4+0]));
+    let y = float(atomicLoad(&buf.data[id*4+1]));
+    let z = float(atomicLoad(&buf.data[id*4+2]));
     var r = float3(x + y + z, y + z, z) / 3e3;
     r = smoothstep(float3(0.), float3(1.), 2.5 * pow(r, float3(.9, .8, .7)));
     textureStore(col, int2(global_id.xy), float4(r, 1.));
-    atomicStore(&buf.data[id*4u+0u], int(x * .7));
-    atomicStore(&buf.data[id*4u+1u], int(y * .7));
-    atomicStore(&buf.data[id*4u+2u], int(z * .7));
+    atomicStore(&buf.data[id*4+0], int(x * .7));
+    atomicStore(&buf.data[id*4+1], int(y * .7));
+    atomicStore(&buf.data[id*4+2], int(z * .7));
 }
