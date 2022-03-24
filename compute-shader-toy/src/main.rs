@@ -114,32 +114,6 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
         format: wgpu::TextureFormat::Rgba16Float,
         usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
     });
-    /*let buf_read = device.create_texture(&wgpu::TextureDescriptor {
-        label: None,
-        size: Extent3d {
-            width: size.width,
-            height: size.height,
-            depth_or_array_layers: 4,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba16Float,
-        usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-    });
-    let buf_write = device.create_texture(&wgpu::TextureDescriptor {
-        label: None,
-        size: Extent3d {
-            width: size.width,
-            height: size.height,
-            depth_or_array_layers: 4,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba16Float,
-        usage: wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::STORAGE_BINDING,
-    });*/
     let sb0 = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
         size: (4 * 4 * size.width * size.height).into(),
@@ -193,40 +167,8 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 },
                 count: None,
             },
-            /*wgpu::BindGroupLayoutEntry {
+            wgpu::BindGroupLayoutEntry {
                 binding: 3,
-                visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::Texture {
-                    multisampled: false,
-                    sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgpu::TextureViewDimension::D2Array,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 4,
-                visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::StorageTexture {
-                    access: wgpu::StorageTextureAccess::WriteOnly,
-                    format: wgpu::TextureFormat::Rgba16Float,
-                    view_dimension: wgpu::TextureViewDimension::D2Array,
-                },
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 5,
-                visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
-                count: None,
-            },
-            wgpu::BindGroupLayoutEntry {
-                binding: 6,
-                visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                count: None,
-            },*/
-            wgpu::BindGroupLayoutEntry {
-                binding: 7,
                 visibility: wgpu::ShaderStages::COMPUTE,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Storage {
@@ -257,21 +199,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
             wgpu::BindGroupEntry { binding: 0, resource: params.as_entire_binding() },
             wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&img.create_view(&Default::default())) },
             wgpu::BindGroupEntry { binding: 2, resource: sb0.as_entire_binding() },
-            /*wgpu::BindGroupEntry { binding: 3, resource: wgpu::BindingResource::TextureView(&buf_read.create_view(&wgpu::TextureViewDescriptor {
-                dimension: Some(wgpu::TextureViewDimension::D2Array),
-                ..Default::default()
-            })) },
-            wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(&buf_write.create_view(&wgpu::TextureViewDescriptor {
-                dimension: Some(wgpu::TextureViewDimension::D2Array),
-                ..Default::default()
-            })) },
-            wgpu::BindGroupEntry { binding: 5, resource: wgpu::BindingResource::Sampler(&device.create_sampler(&Default::default())) },
-            wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::Sampler(&device.create_sampler(&wgpu::SamplerDescriptor {
-                mag_filter: wgpu::FilterMode::Linear,
-                min_filter: wgpu::FilterMode::Linear,
-                ..Default::default()
-            })) },*/
-            wgpu::BindGroupEntry { binding: 7, resource: sbf.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 3, resource: sbf.as_entire_binding() },
         ],
     });
 
@@ -385,7 +313,7 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                 let frame = surface
                     .get_current_texture()
                     .expect("error getting texture from swap chain");
-                let params_data = [size.width, size.height, frame_count];
+                let params_data = [frame_count];
                 let params_bytes = bytemuck::bytes_of(&params_data);
                 let mut encoder = device.create_command_encoder(&Default::default());
                 staging_belt.write_buffer(&mut encoder, &params, 0, wgpu::BufferSize::new(params_bytes.len() as wgpu::BufferAddress).unwrap(), &device).copy_from_slice(params_bytes);
@@ -397,24 +325,6 @@ async fn run(event_loop: EventLoop<()>, window: Window) {
                         compute_pass.set_bind_group(0, &compute_bind_group, &[]);
                         compute_pass.dispatch(size.width / 16, size.height / 16, 1);
                     }
-                    /*encoder.copy_texture_to_texture(
-                        wgpu::ImageCopyTexture {
-                            texture: &buf_write,
-                            mip_level: 0,
-                            origin: wgpu::Origin3d::ZERO,
-                            aspect: wgpu::TextureAspect::All,
-                        },
-                        wgpu::ImageCopyTexture {
-                            texture: &buf_read,
-                            mip_level: 0,
-                            origin: wgpu::Origin3d::ZERO,
-                            aspect: wgpu::TextureAspect::All,
-                        },
-                        Extent3d {
-                            width: size.width,
-                            height: size.height,
-                            depth_or_array_layers: 4,
-                        });*/
                 };
                 for _ in 0..1 {
                     for pipeline in &compute_pipelines {
